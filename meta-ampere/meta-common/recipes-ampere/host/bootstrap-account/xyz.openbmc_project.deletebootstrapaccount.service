@@ -1,0 +1,11 @@
+[Unit]
+Description=Ampere Delete Bootstrap Account Handling
+After=phosphor-ipmi-host.service
+
+[Service]
+Restart=on-failure
+ExecStart=/usr/sbin/ampere_delete_bootstrap_account.sh
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target
