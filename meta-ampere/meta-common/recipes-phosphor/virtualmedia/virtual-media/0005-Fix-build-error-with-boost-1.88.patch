@@ -1,0 +1,91 @@
+From d12c48e26d8bded3bcd845f461599431b556a9ab Mon Sep 17 00:00:00 2001
+From: Khang D Nguyen <khangng@os.amperecomputing.com>
+Date: Tue, 5 Aug 2025 10:20:30 +0700
+Subject: [PATCH] Fix build error with boost 1.88
+
+async_pipe is moved into Boost process v1/.
+
+Upstream-Status: Inactive-Upstream
+Signed-off-by: Khang D Nguyen <khangng@os.amperecomputing.com>
+---
+ meson.build    |  2 +-
+ src/system.hpp | 16 ++++++++++------
+ src/utils.hpp  |  4 ++--
+ 3 files changed, 13 insertions(+), 9 deletions(-)
+
+diff --git a/meson.build b/meson.build
+index 305d6e1..4e1e5ca 100644
+--- a/meson.build
++++ b/meson.build
+@@ -158,7 +158,7 @@ endif
+ 
+ boost = dependency('boost',
+                    modules: ['coroutine', 'iostreams', 'filesystem',
+-			     'program_options', 'regex', 'system', 'context'],
++			     'program_options', 'regex', 'system', 'context', 'process'],
+                    version: '>=1.77',
+                    fallback : ['boost', 'boost_dep'],
+                    static: false,
+diff --git a/src/system.hpp b/src/system.hpp
+index 2299f69..23a7add 100644
+--- a/src/system.hpp
++++ b/src/system.hpp
+@@ -6,7 +6,11 @@
+ #include <boost/asio.hpp>
+ #include <boost/asio/spawn.hpp>
+ #include <boost/container/flat_map.hpp>
+-#include <boost/process.hpp>
++#include <boost/process/v1/args.hpp>
++#include <boost/process/v1/async.hpp>
++#include <boost/process/v1/async_pipe.hpp>
++#include <boost/process/v1/child.hpp>
++#include <boost/process/v1/io.hpp>
+ #include <filesystem>
+ #include <fstream>
+ #include <sdbusplus/asio/object_server.hpp>
+@@ -361,9 +365,9 @@ class Process : public std::enable_shared_from_this<Process>
+     {
+         std::error_code ec;
+         LogMsg(Logger::Debug, "[Process]: Spawning ", app, " (", args, ")");
+-        child = boost::process::child(
+-            app, boost::process::args(args),
+-            (boost::process::std_out & boost::process::std_err) > pipe, ec,
++        child = boost::process::v1::child(
++            app, boost::process::v1::args(args),
++            (boost::process::v1::std_out & boost::process::v1::std_err) > pipe, ec,
+             ioc);
+ 
+         if (ec)
+@@ -470,8 +474,8 @@ class Process : public std::enable_shared_from_this<Process>
+ 
+   private:
+     boost::asio::io_context& ioc;
+-    boost::process::child child;
+-    boost::process::async_pipe pipe;
++    boost::process::v1::child child;
++    boost::process::v1::async_pipe pipe;
+     std::string name;
+     std::string app;
+     const NBDDevice& dev;
+diff --git a/src/utils.hpp b/src/utils.hpp
+index ba5e0e6..59cb9ea 100644
+--- a/src/utils.hpp
++++ b/src/utils.hpp
+@@ -6,7 +6,7 @@
+ 
+ #include <algorithm>
+ #include <boost/asio/steady_timer.hpp>
+-#include <boost/process/async_pipe.hpp>
++#include <boost/process/v1/async_pipe.hpp>
+ #include <boost/type_traits/has_dereference.hpp>
+ #include <filesystem>
+ #include <fstream>
+@@ -201,7 +201,7 @@ class NamedPipe
+     }
+ 
+     const std::string name;
+-    boost::process::async_pipe impl;
++    boost::process::v1::async_pipe impl;
+     Buffer buffer;
+ };
+ 

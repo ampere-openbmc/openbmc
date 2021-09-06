@@ -18,6 +18,13 @@ BOOST_LIBS:openbmc-phosphor:class-target = " \
     process \
     thread \
     url \
+    atomic \
+    filesystem \
+    iostreams \
+    program_options \
+    random \
+    regex \
+    system \
     ${@bb.utils.contains('DISTRO_FEATURES', 'ptest', 'serialization', '', d)} \
 "
 # When libcereal is compiled with ptest, it needs boost to support

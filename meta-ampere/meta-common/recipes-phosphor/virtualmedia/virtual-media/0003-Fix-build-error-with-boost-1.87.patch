@@ -1,0 +1,146 @@
+From c3d87cc06b9861a2e5a184e0a34ddc9004266374 Mon Sep 17 00:00:00 2001
+From: Khang D Nguyen <khangng@os.amperecomputing.com>
+Date: Wed, 23 Apr 2025 12:22:24 +0700
+Subject: [PATCH] Fix build error with boost 1.87
+
+Upstream-Status: Denied [archived repository]
+Signed-off-by: Khang D Nguyen <khangng@os.amperecomputing.com>
+---
+ meson.build                                |  2 +-
+ src/state/active_state.hpp                 |  4 ++--
+ src/system.hpp                             | 13 +++++--------
+ src/utils.hpp                              |  2 +-
+ subprojects/boost.wrap                     |  8 ++++----
+ subprojects/packagefiles/boost/meson.build |  3 +--
+ 6 files changed, 14 insertions(+), 18 deletions(-)
+
+diff --git a/meson.build b/meson.build
+index c438b89..305d6e1 100644
+--- a/meson.build
++++ b/meson.build
+@@ -158,7 +158,7 @@ endif
+ 
+ boost = dependency('boost',
+                    modules: ['coroutine', 'iostreams', 'filesystem',
+-			     'program_options', 'regex', 'system'],
++			     'program_options', 'regex', 'system', 'context'],
+                    version: '>=1.77',
+                    fallback : ['boost', 'boost_dep'],
+                    static: false,
+diff --git a/src/state/active_state.hpp b/src/state/active_state.hpp
+index 66819a0..ea6264f 100644
+--- a/src/state/active_state.hpp
++++ b/src/state/active_state.hpp
+@@ -57,10 +57,10 @@ struct ActiveState : public BasicStateT<ActiveState>
+                     Configuration::inactivityTimeout - timeSinceLastAccess;
+             }
+ 
+-            timer.expires_from_now(std::chrono::seconds(1));
++            timer.expires_after(std::chrono::seconds(1));
+             timer.async_wait(handler);
+         };
+-        timer.expires_from_now(std::chrono::seconds(1));
++        timer.expires_after(std::chrono::seconds(1));
+         timer.async_wait(handler);
+ 
+         return nullptr;
+diff --git a/src/system.hpp b/src/system.hpp
+index eb22525..2299f69 100644
+--- a/src/system.hpp
++++ b/src/system.hpp
+@@ -316,8 +316,7 @@ class DeviceMonitor
+                     }
+                 }
+             }
+-        },
+-        {});
++        }, boost::asio::detached);
+     }
+ 
+     void addDevice(const NBDDevice& device)
+@@ -416,7 +415,7 @@ class Process : public std::enable_shared_from_this<Process>
+             while (child.running() && waitCnt > 0)
+             {
+                 boost::system::error_code ignored_ec;
+-                timer.expires_from_now(std::chrono::milliseconds(100));
++                timer.expires_after(std::chrono::milliseconds(100));
+                 timer.async_wait(yield[ignored_ec]);
+                 waitCnt--;
+             }
+@@ -431,8 +430,7 @@ class Process : public std::enable_shared_from_this<Process>
+                    " Native: ", child.native_exit_code());
+ 
+             onExit(child.exit_code());
+-        },
+-        {});
++        }, boost::asio::detached);
+         return true;
+     }
+ 
+@@ -451,7 +449,7 @@ class Process : public std::enable_shared_from_this<Process>
+             while (child.running() && waitCnt > 0)
+             {
+                 boost::system::error_code ignored_ec;
+-                timer.expires_from_now(std::chrono::milliseconds(100));
++                timer.expires_after(std::chrono::milliseconds(100));
+                 timer.async_wait(yield[ignored_ec]);
+                 waitCnt--;
+             }
+@@ -462,8 +460,7 @@ class Process : public std::enable_shared_from_this<Process>
+                 child.terminate();
+                 onTerminate();
+             }
+-        },
+-        {});
++        }, boost::asio::detached);
+     }
+ 
+     std::string application()
+diff --git a/src/utils.hpp b/src/utils.hpp
+index 1c03aa0..ba5e0e6 100644
+--- a/src/utils.hpp
++++ b/src/utils.hpp
+@@ -334,7 +334,7 @@ class NotificationWrapper
+     {
+         LogMsg(Logger::Debug, "Notification initiated");
+         started = true;
+-        timer->expires_from_now(duration);
++        timer->expires_after(duration);
+         timer->async_wait([this, handler{std::move(handler)}](
+                               const boost::system::error_code& ec) {
+             started = false;
+diff --git a/subprojects/boost.wrap b/subprojects/boost.wrap
+index 71e0382..07fd27f 100644
+--- a/subprojects/boost.wrap
++++ b/subprojects/boost.wrap
+@@ -1,7 +1,7 @@
+ [wrap-file]
+-source_url = https://boostorg.jfrog.io/artifactory/main/release/1.77.0/source/boost_1_77_0.tar.gz
+-source_hash = 5347464af5b14ac54bb945dc68f1dd7c56f0dad7262816b956138fc53bcc0131
+-source_filename = boost_1_77_0.tar.gz
++source_url = https://archives.boost.io/release/1.87.0/source/boost_1_87_0.tar.bz2
++source_hash = af57be25cb4c4f4b413ed692fe378affb4352ea50fbe294a11ef548f4d527d89
++source_filename = boost_1_87_0.tar.gz
+ 
+-directory = boost_1_77_0
++directory = boost_1_87_0
+ patch_directory = boost
+diff --git a/subprojects/packagefiles/boost/meson.build b/subprojects/packagefiles/boost/meson.build
+index f991d36..5190ecf 100644
+--- a/subprojects/packagefiles/boost/meson.build
++++ b/subprojects/packagefiles/boost/meson.build
+@@ -1,5 +1,5 @@
+ project('boost', 'cpp',
+-         version: '1.77',
++         version: '1.87',
+          meson_version: '>=0.56.0')
+ 
+ cxx = meson.get_compiler('cpp')
+@@ -35,7 +35,6 @@ boost_dep = declare_dependency(
+                        cxx.find_library('boost_filesystem', dirs: lib_dir, static: true),
+                        cxx.find_library('boost_regex', dirs: lib_dir, static: true),
+ 		       cxx.find_library('boost_program_options', dirs: lib_dir, static: true),
+-                       cxx.find_library('boost_thread', dirs: lib_dir, static: true),
+                        cxx.find_library('boost_coroutine', dirs: lib_dir, static: true),
+                        cxx.find_library('boost_iostreams', dirs: lib_dir, static: true),
+ 		       custom_dep
