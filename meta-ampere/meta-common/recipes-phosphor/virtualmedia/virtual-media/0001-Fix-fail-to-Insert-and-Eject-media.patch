@@ -1,0 +1,184 @@
+From 8b20c076284b4ee29d5c7cf1e6317ceddf96606a Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Tue, 17 Oct 2023 13:41:28 +0700
+Subject: [PATCH 1/4] Fix fail to Insert and Eject media
+
+This patch makes the following changes:
+- Use rm command to remove USB config file as current fs::remove_all
+  function does not work correctly.
+- Change the virtual-media install file from bindir to sbindir follow
+  the xyz.openbmc_project.VirtualMedia.service
+- Remove the UsbGadget::getStats which issue of the usb-gadget in kernel
+- Add "-L" option to work with ioctl interface when update to nbd version 3.24.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ meson.build                    | 11 +++---
+ src/state/activating_state.cpp |  3 ++
+ src/state/active_state.hpp     | 12 +++----
+ src/system.hpp                 | 63 +++++++++++++++++++++++++++-------
+ 4 files changed, 65 insertions(+), 24 deletions(-)
+
+diff --git a/meson.build b/meson.build
+index ad24d31..c438b89 100644
+--- a/meson.build
++++ b/meson.build
+@@ -3,16 +3,15 @@ project(
+     'cpp',
+     default_options: [
+         'warning_level=3',
+-        'werror=true',
+-        'cpp_std=c++20',
++        'cpp_std=c++23',
+         'cpp_rtti=false',
+     ],
+     license: 'Apache-2.0',
+     version: '0.1',
+ )
+ 
+-if get_option('cpp_std') != 'c++20'
+-    error('This project requires c++20 support')
++if get_option('cpp_std') != 'c++23'
++    error('This project requires c++23 support')
+ endif
+ 
+ cxx = meson.get_compiler('cpp')
+@@ -204,7 +203,7 @@ srcfiles_app = [ 'src/main.cpp',
+                  'src/state/activating_state.cpp',
+                ]
+ 
+-bindir = get_option('prefix') + '/' +get_option('bindir')
++sbindir = get_option('prefix') + '/' +get_option('sbindir')
+ 
+ if get_option('legacy-mode').enabled()
+   add_project_arguments(
+@@ -220,7 +219,7 @@ executable('virtual-media',
+            ],
+            include_directories: incdir,
+            install: true,
+-           install_dir:bindir)
++           install_dir:sbindir)
+ 
+ #Tests are placed in the tests folder, with it's own meson.build
+ if (get_option('tests').enabled())
+diff --git a/src/state/activating_state.cpp b/src/state/activating_state.cpp
+index 7143545..25310b0 100644
+--- a/src/state/activating_state.cpp
++++ b/src/state/activating_state.cpp
+@@ -209,6 +209,9 @@ std::unique_ptr<resource::Process>
+         boost::algorithm::join(
+             Configuration::MountPoint::toArgs(machine.getConfig()), " ");
+ 
++    std::string opt = " -L";
++    nbdClient = nbdClient + opt;
++
+     std::vector<std::string> args = {
+         // Listen for client on this unix socket...
+         "--unix",
+diff --git a/src/state/active_state.hpp b/src/state/active_state.hpp
+index beb1da1..66819a0 100644
+--- a/src/state/active_state.hpp
++++ b/src/state/active_state.hpp
+@@ -29,12 +29,12 @@ struct ActiveState : public BasicStateT<ActiveState>
+ 
+             auto now = std::chrono::steady_clock::now();
+ 
+-            auto stats = UsbGadget::getStats(std::string(machine.getName()));
+-            if (stats && (*stats != lastStats))
+-            {
+-                lastStats = std::move(*stats);
+-                lastAccess = now;
+-            }
++            // auto stats = UsbGadget::getStats(std::string(machine.getName()));
++            // if (stats && (*stats != lastStats))
++            // {
++            //     lastStats = std::move(*stats);
++            //     lastAccess = now;
++            // }
+ 
+             auto timeSinceLastAccess =
+                 std::chrono::duration_cast<std::chrono::seconds>(now -
+diff --git a/src/system.hpp b/src/system.hpp
+index d0af549..ea135ea 100644
+--- a/src/system.hpp
++++ b/src/system.hpp
+@@ -516,6 +516,8 @@ struct UsbGadget : private FsHelper
+                ", path=", path, ", State=", static_cast<uint32_t>(change), ")");
+         bool success = true;
+         std::error_code ec;
++        std::string cmd;
++        int systemRet;
+         if (change == StateChange::unknown)
+         {
+             LogMsg(Logger::Critical,
+@@ -582,19 +584,56 @@ struct UsbGadget : private FsHelper
+         // StateChange: unknown, notMonitored, inserted were handler
+         // earlier. We'll get here only for removed, or cleanup
+ 
+-        echoToFile(gadgetDir / "UDC", "");
+-        const std::array<const char*, 6> dirs = {
+-            massStorageDir.c_str(),   funcMassStorageDir.c_str(),
+-            configStringsDir.c_str(), configDir.c_str(),
+-            stringsDir.c_str(),       gadgetDir.c_str()};
+-        for (const char* dir : dirs)
++        // echoToFile(gadgetDir / "UDC", "");
++        // const std::array<const char*, 6> dirs = {
++        //     massStorageDir.c_str(),   funcMassStorageDir.c_str(),
++        //     configStringsDir.c_str(), configDir.c_str(),
++        //     stringsDir.c_str(),       gadgetDir.c_str()};
++        // for (const char* dir : dirs)
++        // {
++        //     fs::remove(dir, ec);
++        //     if (ec)
++        //     {
++        //         success = false;
++        //         LogMsg(Logger::Error, "[App]: UsbGadget ", ec.message());
++        //     }
++        // }
++
++        cmd = "rm " + massStorageDir.string();
++        systemRet = system(cmd.c_str());
++        if(systemRet == -1)
+         {
+-            fs::remove(dir, ec);
+-            if (ec)
+-            {
+-                success = false;
+-                LogMsg(Logger::Error, "[App]: UsbGadget ", ec.message());
+-            }
++            std::cout << "The system method failed!" << std::endl;
++        }
++        cmd = "rmdir " + funcMassStorageDir.string();
++        systemRet = system(cmd.c_str());
++        if(systemRet == -1)
++        {
++            std::cout << "The system method failed!" << std::endl;
++        }
++        cmd = "rmdir " + configStringsDir.string();
++        systemRet = system(cmd.c_str());
++        if(systemRet == -1)
++        {
++            std::cout << "The system method failed!" << std::endl;
++        }
++        cmd = "rmdir " + configDir.string();
++        systemRet = system(cmd.c_str());
++        if(systemRet == -1)
++        {
++            std::cout << "The system method failed!" << std::endl;
++        }
++        cmd = "rmdir " + stringsDir.string();
++        systemRet = system(cmd.c_str());
++        if(systemRet == -1)
++        {
++            std::cout << "The system method failed!" << std::endl;
++        }
++        cmd = "rmdir " + gadgetDir.string();
++        systemRet = system(cmd.c_str());
++        if(systemRet == -1)
++        {
++            std::cout << "The system method failed!" << std::endl;
+         }
+ 
+         if (success)

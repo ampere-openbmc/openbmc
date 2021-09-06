@@ -15,6 +15,7 @@ RDEPENDS:${PN}-extras:append = " \
                                 obmc-phosphor-buttons-handler \
                                 util-linux-logger \
                                 smbios-mdr \
+                                virtual-media \
                                "
 
 RDEPENDS:${PN}-inventory:append = " \
