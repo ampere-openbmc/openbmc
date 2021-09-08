@@ -1,0 +1,177 @@
+From f87555331c2aa16e25b3973f50affd0b88991d04 Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Wed, 25 Aug 2021 21:05:57 +0700
+Subject: [PATCH 1/2] update the wrote FRU's size based on data in binary file
+
+Problem: When user request write FRU data from binary file,
+if the size of binary file greater than current FRU's size
+then the wrote data is missed.
+
+Root cause: the number of bytes have been sent by ipmitool
+based on the current FRU's size. Therefore the last bytes
+of binary file have been missed.
+
+Solution: The wrote FRU's size is based on the content of
+the binary file.
+
+Tested:
+       Write FRU data which have the size greater than the
+       current FRU's size on the board via command:
+        ipmitool fru write 0 <filename.bin>
+
+Upstream-Status: Pending
+
+Signed-off-by: Thang Tran <thuutran@amperecomputing.com>
+---
+ lib/ipmi_fru.c | 107 +++++++++++++++++++++++++++++++++++++++++++++----
+ 1 file changed, 99 insertions(+), 8 deletions(-)
+
+diff --git a/lib/ipmi_fru.c b/lib/ipmi_fru.c
+index 4a5018d..f62bae1 100644
+--- a/lib/ipmi_fru.c
++++ b/lib/ipmi_fru.c
+@@ -135,6 +135,9 @@ ipmi_fru_set_field_string_rebuild(struct ipmi_intf * intf, uint8_t fruId,
+ static void
+ fru_area_print_multirec_bloc(struct ipmi_intf * intf, struct fru_info * fru,
+ 			uint8_t id, uint32_t offset);
++
++static uint16_t ipmi_fru_get_len_of_data(char * pFileName);
++
+ int
+ read_fru_area(struct ipmi_intf * intf, struct fru_info *fru, uint8_t id,
+ 			uint32_t offset, uint32_t length, uint8_t *frubuf);
+@@ -498,11 +501,6 @@ write_fru_area(struct ipmi_intf * intf, struct fru_info *fru, uint8_t id,
+ 	uint16_t found_bloc = 0;
+
+ 	finish = doffset + length;        /* destination offset */
+-	if (finish > fru->size)
+-	{
+-		lprintf(LOG_ERROR, "Return error");
+-		return -1;
+-	}
+
+ 	if (fru->access && ((doffset & 1) || (length & 1))) {
+ 		lprintf(LOG_ERROR, "Odd offset or length specified");
+@@ -3303,6 +3301,98 @@ ipmi_fru_read_to_bin(struct ipmi_intf * intf,
+ 	free_n(&pFruBuf);
+ }
+
++/* ipmi_fru_get_len_of_data - Get the length of FRU data in binary file
++ *
++ * pFileName: FRU binary file name
++ *
++ * return: Length of FRU data in binary
++ */
++static uint16_t ipmi_fru_get_len_of_data(char * pFileName)
++{
++	uint16_t ret = 0;
++	FILE *pFile;
++
++	pFile = fopen(pFileName, "rb");
++
++	if(pFile)
++	{
++		uint8_t *pFruBuf;
++		uint32_t fileSize = 0;
++		uint32_t areaLen = 0;
++		uint32_t len = 0;
++		uint8_t i = 0;
++		uint16_t lastRecordStart = 0;
++
++		// Get the size of file
++		fseek(pFile, 0L, SEEK_END);
++		fileSize = ftell(pFile);
++		fseek(pFile, 0L, SEEK_SET);
++
++		pFruBuf = malloc(fileSize);
++		if(!pFruBuf)
++		{
++			return 0;
++		}
++
++		len = fread(pFruBuf, 1, fileSize, pFile);
++
++		// Find the last area in the FRU binary file in the Common
++		// header, from Chassis to Multiple record
++		for (i = 2; i <= 5; i++)
++		{
++			if (lastRecordStart < pFruBuf[i])
++			{
++				lastRecordStart = pFruBuf[i];
++			}
++		}
++
++		// If the last area in FRU binary file is multiple record
++		if(lastRecordStart == pFruBuf[5])
++		{
++			uint8_t endOfList = 0;
++
++			// The start offset of area is multiple by 8
++			lastRecordStart *= 8;
++
++			// Scan all sub-area of multiple record area
++			while(!endOfList && (lastRecordStart < len))
++			{
++				// Get the "end of list" bit
++				endOfList = pFruBuf[lastRecordStart + 1] & 0x80;
++				// The length of MultiRecord area is stored at second byte
++				areaLen = pFruBuf[lastRecordStart + 2];
++				areaLen += 5;
++
++				// Go to the next MultiRecode header
++				if(!endOfList)
++				{
++					lastRecordStart += areaLen;
++				}
++				else
++				{
++					// No more MultiRecord header
++					ret = lastRecordStart + areaLen;
++				}
++			}
++		}
++		else
++		{
++			// The start offset of area is multiple by 8
++			lastRecordStart *= 8;
++			// The length of area is stored at second byte
++			areaLen = pFruBuf[lastRecordStart + 1];
++			areaLen *= 8;
++			ret = lastRecordStart + areaLen;
++		}
++
++		free(pFruBuf);
++	}
++
++	fclose(pFile);
++
++	return ret;
++}
++
+ static void
+ ipmi_fru_write_from_bin(struct ipmi_intf * intf,
+ 			char * pFileName,
+@@ -3343,15 +3433,16 @@ ipmi_fru_write_from_bin(struct ipmi_intf * intf,
+ 		printf("Fru Access = %xh\n", fru.access);
+ 	}
+
+-	pFruBuf = malloc(fru.size);
++	len = ipmi_fru_get_len_of_data(pFileName);
++	pFruBuf = malloc(len);
+ 	if (!pFruBuf) {
+-		lprintf(LOG_ERR, "Cannot allocate %d bytes\n", fru.size);
++		lprintf(LOG_ERR, "Cannot allocate %d bytes\n", len);
+ 		return;
+ 	}
+
+ 		pFile = fopen(pFileName, "rb");
+ 		if (pFile) {
+-			len = fread(pFruBuf, 1, fru.size, pFile);
++			len = fread(pFruBuf, 1, len, pFile);
+ 			printf("Fru Size         : %d bytes\n", fru.size);
+ 			printf("Size to Write    : %d bytes\n", len);
+ 			fclose(pFile);
+--
+2.30.0
+
+

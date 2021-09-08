@@ -1,0 +1,111 @@
+From 4a1b9a686510ad9e3868020339b3782a697d71b8 Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Wed, 25 Aug 2021 21:07:15 +0700
+Subject: [PATCH 2/2] support editing FRU field which changes the size of FRU
+
+Issue: When request edit FRU fields which change the
+size of FRU data, the FRU data have been missed.
+
+Root cause: The size of new FRU data is based on the
+old FRU's size and the copying MultiRecord area is
+wrong.
+
+Solution: Update the size of new FRU is based on the
+number of bytes have been padded. Correct the copying
+MultiRecord area.
+
+Tested:
+       Edit FRU filed with the new data long than old
+       data via command:
+        ipmitool fru edit 0 filed b 0 <LongData>
+       Check FRU information via command:
+        ipmitool fri print 0
+       Check FRU data on the EEPROM.
+
+Upstream-Status: Pending
+
+Signed-off-by: Thang Tran <thuutran@amperecomouting.com>
+---
+ lib/ipmi_fru.c | 38 ++++++++++++++++++++------------------
+ 1 file changed, 20 insertions(+), 18 deletions(-)
+
+diff --git a/lib/ipmi_fru.c b/lib/ipmi_fru.c
+index f62bae1..c53b9b1 100644
+--- a/lib/ipmi_fru.c
++++ b/lib/ipmi_fru.c
+@@ -4984,7 +4984,7 @@ ipmi_fru_set_field_string_rebuild(struct ipmi_intf * intf, uint8_t fruId,
+ 	uint8_t *fru_data_new = NULL;
+ 	uint8_t *fru_area = NULL;
+ 	uint32_t fru_field_offset, fru_field_offset_tmp;
+-	uint32_t fru_section_len, header_offset;
++	uint32_t fru_section_len, header_offset, fru_data_new_len;
+ 	uint32_t chassis_offset, board_offset, product_offset;
+ 	uint32_t chassis_len, board_len, product_len, product_len_new;
+ 	int      num_byte_change = 0, padding_len = 0;
+@@ -4994,6 +4994,7 @@ ipmi_fru_set_field_string_rebuild(struct ipmi_intf * intf, uint8_t fruId,
+
+ 	fru_data_old = calloc( fru.size, sizeof(uint8_t) );
+
++	fru_data_new_len = fru.size;
+ 	fru_data_new = malloc( fru.size );
+
+ 	if (!fru_data_old || !fru_data_new) {
+@@ -5125,6 +5126,18 @@ ipmi_fru_set_field_string_rebuild(struct ipmi_intf * intf, uint8_t fruId,
+ 		/* Recalculate padding and section length base on the section changes */
+ 		fru_section_len += (change_size_by_8 * 8);
+ 		padding_len     += (change_size_by_8 * 8);
++		fru_data_new_len += (change_size_by_8 * 8);
++
++		/* Reallocate new FRU data in case the size of FRU has been changed */
++		fru_data_new = (uint8_t*)realloc( (void*)fru_data_new, fru_data_new_len);
++
++		if (!fru_data_new) {
++			printf("Out of memory!\n");
++			rc = -1;
++			goto ipmi_fru_set_field_string_rebuild_out;
++		}
++
++		memcpy(fru_data_new, fru_data_old, fru.size);
+
+ 		#ifdef DBG_RESIZE_FRU
+ 		printf("change_size_by_8: %i\n", change_size_by_8);
+@@ -5205,22 +5218,11 @@ ipmi_fru_set_field_string_rebuild(struct ipmi_intf * intf, uint8_t fruId,
+ 					remaining_offset,
+ 					((header.offset.product) * 8) + product_len_new
+ 				);
+-		if(((header.offset.product * 8) + product_len_new - remaining_offset) < 0)
+-		{
+-			memcpy(
+-						fru_data_new + (header.offset.product * 8) + product_len_new,
+-						fru_data_old + remaining_offset,
+-						fru.size - remaining_offset
+-					);
+-		}
+-		else
+-		{
+-			memcpy(
+-						fru_data_new + (header.offset.product * 8) + product_len_new,
+-						fru_data_old + remaining_offset,
+-						fru.size - ((header.offset.product * 8) + product_len_new)
+-					);
+-		}
++		memcpy(
++					fru_data_new + (header.offset.product * 8) + product_len_new,
++					fru_data_old + remaining_offset,
++					fru.size - remaining_offset
++				);
+ 	}
+
+ 	/* Update only if it's fits padding length as defined in the spec, otherwise, it's an internal
+@@ -5283,7 +5285,7 @@ ipmi_fru_set_field_string_rebuild(struct ipmi_intf * intf, uint8_t fruId,
+ 	/*************************
+ 	7) Finally, write new FRU */
+ 	printf("Writing new FRU.\n");
+-	if( write_fru_area( intf, &fru, fruId, 0, 0, fru.size, fru_data_new ) < 0 )
++	if( write_fru_area( intf, &fru, fruId, 0, 0, fru_data_new_len, fru_data_new ) < 0 )
+ 	{
+ 		printf("Write to FRU data failed.\n");
+ 		rc = -1;
+--
+2.30.0
+
