@@ -1,0 +1,115 @@
+From e69d624e845a88591df97b619731da5567bb8e81 Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Thu, 21 Nov 2024 07:05:26 +0000
+Subject: [PATCH 2/6] adcsensor: Add support DevName option
+
+When there are many ADC devices, the sensor index of different ADC
+devices can be duplicated. So only matching the sensor path index
+with the "Index" value in sensor configuration as the current design
+is not enough. Therefore, ADCSensor daemon should add more matching
+conditions. The device name in the device path can be used as the
+addition checking.
+
+The "DevName" option is added in entity-manager sensor configuration
+file to set the expected device name of one sensor. This setting
+DevName will be match with device name of the sensor path in dbus
+sensor. The default name "iio-hwmon" will be applied for the non
+DevName option sensors for backward compatible.
+
+This commit adds support the "DevName" option in ADCSensor source. The
+code will parse "DevName" options then matching the configured name
+with the device name of the sensor paths.
+
+Tested:
+    1. There are two sensor paths:
+    # readlink -f /sys/class/hwmon/hwmon11/in1_input
+    /sys/devices/platform/iio-hwmon/hwmon/hwmon11/in1_input
+    # readlink -f /sys/class/hwmon/hwmon10/in1_input
+    /sys/devices/platform/iio-hwmon-battery/hwmon/hwmon10/in1_input
+
+    2. Add two ADC sensor configurations:
+    { "Index": 0, "Name": "VBAT_RTC", "DevName":"iio-hwmon-battery",
+    "Type": "ADC" },
+    { "Index": 0, "Name": "S0_0V75_PCP", "Type": "ADC" }
+
+    3. The sensor configurations should be matched as:
+    + VBAT_RTC with ../iio-hwmon-battery/hwmon/hwmon10/in1_input
+    + S0_0V75_PCP with ../iio-hwmon/hwmon/hwmon11/in1_input
+
+Upstream-Status: Pending
+
+Change-Id: I962a552fd7f35ab3c656c2730141530d243e4122
+Signed-off-by: Thang Tran <thuutran@amperecomputing.com>
+---
+ src/adc/ADCSensorMain.cpp | 32 +++++++++++++++++++++++++++-----
+ 1 file changed, 27 insertions(+), 5 deletions(-)
+
+diff --git a/src/adc/ADCSensorMain.cpp b/src/adc/ADCSensorMain.cpp
+index ec38908..20dbe78 100644
+--- a/src/adc/ADCSensorMain.cpp
++++ b/src/adc/ADCSensorMain.cpp
+@@ -70,7 +70,7 @@ enum class UpdateType
+ // filter out adc from any other voltage sensor
+ bool isAdc(const fs::path& parentPath)
+ {
+-    fs::path namePath = parentPath / "name";
++    fs::path namePath = parentPath / "device";
+
+     std::ifstream nameFile(namePath);
+     if (!nameFile.good())
+@@ -79,10 +79,8 @@ bool isAdc(const fs::path& parentPath)
+         return false;
+     }
+
+-    std::string name;
+-    std::getline(nameFile, name);
+-
+-    return name == "iio_hwmon";
++    std::string deviceName = fs::canonical(namePath).stem();
++    return deviceName.find("iio-hwmon") == 0;
+ }
+
+ void createSensors(
+@@ -121,8 +119,11 @@ void createSensors(
+                 std::regex_search(pathStr, match, inputRegex);
+                 std::string indexStr = *(match.begin() + 1);
+
++                auto directory = path.parent_path();
+                 // convert to 0 based
+                 size_t index = std::stoul(indexStr) - 1;
++                fs::path namePath = directory / "device";
++                std::string deviceName = fs::canonical(namePath).stem();
+
+                 const SensorData* sensorData = nullptr;
+                 const std::string* interfacePath = nullptr;
+@@ -148,6 +149,27 @@ void createSensors(
+                     {
+                         continue;
+                     }
++
++                    auto findDevName =
++                                    baseConfiguration->second.find("DevName");
++                    if (findDevName != baseConfiguration->second.end())
++                    {
++                        const std::string& sName =
++                            std::get<std::string>(findDevName->second);
++                        if (deviceName != sName)
++                        {
++                            continue;
++                        }
++                    }
++                    /*
++                    * Match device name with default name iio-hwmon
++                    * for backward compatible
++                    */
++                    else if (deviceName != "iio-hwmon")
++                    {
++                        continue;
++                    }
++
+                     auto findIndex = baseConfiguration->second.find("Index");
+                     if (findIndex == baseConfiguration->second.end())
+                     {
+--
+2.43.0
+
