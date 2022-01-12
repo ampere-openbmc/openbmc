@@ -1,0 +1,80 @@
+From 0e437d222387cd2143a5f3669041576560278cf4 Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Thu, 21 Nov 2024 07:07:21 +0000
+Subject: [PATCH] adcsensor: support PresenceGpio option
+
+This allows to creates a sensor depending on the GPIO value by detecting
+it using the new "PresenceGpio" option.
+
+Upstream-Status: Pending
+
+Change-Id: I8e8744b388d7f4d4e00262f38b5ca42352d887c5
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ src/adc/ADCSensorMain.cpp | 53 +++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 53 insertions(+)
+
+diff --git a/src/adc/ADCSensorMain.cpp b/src/adc/ADCSensorMain.cpp
+index 5890cf8..61dba8f 100644
+--- a/src/adc/ADCSensorMain.cpp
++++ b/src/adc/ADCSensorMain.cpp
+@@ -304,6 +304,59 @@ void createSensors(
+                     continue;
+                 }
+ 
++                bool presenceGpio = true;
++                for (const auto& [key, cfgMap] : *sensorData)
++                {
++                    if (key.find("PresenceGpio") != std::string::npos)
++                    {
++                        auto findName = cfgMap.find("Name");
++                        if (findName != cfgMap.end())
++                        {
++                            std::string gpioName = std::visit(
++                                VariantToStringVisitor(), findName->second);
++                            int polarity = gpiod::line::ACTIVE_HIGH;
++                            auto findPolarity = cfgMap.find("Polarity");
++                            if (findPolarity != cfgMap.end())
++                            {
++                                if (std::string("Low") ==
++                                    std::visit(VariantToStringVisitor(),
++                                            findPolarity->second))
++                                {
++                                    polarity = gpiod::line::ACTIVE_LOW;
++                                }
++                            }
++
++                            auto line = gpiod::find_line(gpioName);
++                            if (!line)
++                            {
++                                lg2::error("Error finding gpio: {GPIO_NAME}", "GPIO_NAME", gpioName);
++                            }
++                            else
++                            {
++                                try
++                                {
++                                    line.request({"adcsensor",
++                                                gpiod::line_request::DIRECTION_INPUT,
++                                                polarity == gpiod::line::ACTIVE_HIGH
++                                                    ? 0
++                                                    : gpiod::line_request::FLAG_ACTIVE_LOW});
++                                    presenceGpio = (line.get_value() != 0);
++                                    line.release();
++                                }
++                                catch (const std::system_error&)
++                                {
++                                    lg2::error("Error requesting gpio: {GPIO_NAME}", "GPIO_NAME", gpioName);
++                                }
++                            }
++                        }
++                        break;
++                    }
++                }
++                if (!presenceGpio)
++                {
++                    continue;
++                }
++
+                 std::vector<thresholds::Threshold> sensorThresholds;
+                 if (!parseThresholdsFromConfig(*sensorData, sensorThresholds))
+                 {
