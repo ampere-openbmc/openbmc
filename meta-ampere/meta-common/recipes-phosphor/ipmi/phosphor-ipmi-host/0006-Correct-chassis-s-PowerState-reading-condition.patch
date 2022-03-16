@@ -1,0 +1,52 @@
+From ec02ed4bba77ce63a91a5202e4d40c7ce738eadd Mon Sep 17 00:00:00 2001
+From: Chau Ly <chaul@amperecomputing.com>
+Date: Fri, 5 Jan 2024 07:33:45 +0000
+Subject: [PATCH 06/11] Correct chassis's PowerState reading condition
+
+phosphor-dbus-interfaces defines 4 values for PowerState property under
+xyz.openbmc_project.State.Chassis interface [1]. The current logic
+causes all the other values except for
+`xyz.openbmc_project.State.Chassis.PowerState.On` to be interpreted as
+`Off` in `ipmitool power status`. This patch supports interpreting
+CurrentPowerState value to adapt all states following the logic in the
+Tested section below.
+
+Tested:
+`D-Bus value ends with` <=> `$ipmitool power status`
+*.Off <=> Chassis Power is off
+*.TransitioningToOn <=> Chassis Power is off
+*.On <=> Chassis Power is on
+*.TransitioningToOff <=> Chassis Power is on
+
+[1]: https://github.com/openbmc/phosphor-dbus-interfaces/blob/master/yaml/xyz/openbmc_project/State/Chassis.interface.yaml
+
+Upstream-Status: Pending
+
+Signed-off-by: Chau Ly <chaul@amperecomputing.com>
+Change-Id: Ic8e9f0a10b061137126ed3e24ad71e3bf80a5a34
+---
+ chassishandler.cpp | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/chassishandler.cpp b/chassishandler.cpp
+index 850b090..150dff1 100644
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -973,8 +973,12 @@ std::optional<bool> getPowerStatus()
+         ipmi::Value powerState =
+             ipmi::getDbusProperty(*busp, service, chassisStatePath,
+                                   chassisStateIntf, "CurrentPowerState");
+-        powerGood = std::get<std::string>(powerState) ==
+-                    "xyz.openbmc_project.State.Chassis.PowerState.On";
++        std::string powerStateStr = std::get<std::string>(powerState);
++        if (powerStateStr.ends_with(".On") ||
++            powerStateStr.ends_with(".TransitioningToOff"))
++        {
++            powerGood = true;
++        }
+     }
+     catch (const std::exception& e)
+     {
+--
+2.43.0
+

@@ -1,0 +1,44 @@
+From a225d0c01adf3b2fadf72e70a3fdb027db6bb450 Mon Sep 17 00:00:00 2001
+From: Chau Ly <chaul@amperecomputing.com>
+Date: Fri, 5 Jan 2024 07:22:10 +0000
+Subject: [PATCH 07/11] chassishandler: Interpret intrusion sensor values
+
+Chassis Intrusion Sensor value on D-Bus was updated with new format that
+adapts PID enum definition [1]. This patch modifies how the value from
+D-Bus be interpreted to adapt with the change from D-Bus.
+
+[1]: https://github.com/openbmc/dbus-sensors/commit/b318dcaeaf0e847b6f0e2bc9365873ebe4e5dabd
+
+Tested:
+If value on D-Bus is:
+"xyz.openbmc_project.Chassis.Intrusion.Status.Normal"
+$ ipmitool chassis status | grep -i intrusion
+Chassis Intrusion: inactive
+
+Otherwise, Chassis Intrusion: active
+
+Upstream-Status: Pending
+
+Signed-off-by: Chau Ly <chaul@amperecomputing.com>
+Change-Id: I3bf7d6c8db9d8537cde10a8e8b20d325b86a9c73
+---
+ chassishandler.cpp | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/chassishandler.cpp b/chassishandler.cpp
+index 150dff1..3125469 100644
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -1098,8 +1098,7 @@ static std::optional<bool> getChassisIntrusionStatus(ipmi::Context::ptr& ctx)
+             chassisIntrusionStr);
+         if (!ec)
+         {
+-            bool ret =
+-                (chassisIntrusionStr == "HardwareIntrusion") ? true : false;
++            bool ret = (chassisIntrusionStr.ends_with("Normal")) ? false : true;
+             return std::make_optional(ret);
+         }
+     }
+--
+2.43.0
+

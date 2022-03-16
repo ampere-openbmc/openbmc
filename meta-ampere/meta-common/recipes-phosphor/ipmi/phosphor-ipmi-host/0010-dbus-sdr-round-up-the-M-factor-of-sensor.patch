@@ -1,0 +1,42 @@
+From fdfc64ab3adfcfe791534e7d1fa1b20935f2a3a2 Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Wed, 28 Aug 2024 10:09:20 +0700
+Subject: [PATCH 10/11] dbus-sdr: round up the M factor of sensor
+
+Issue: When the MaxValue of sensor is 21000 and the MinValue is 0, the M
+value is 82 and the rExp is 0. The range of the sensor's value in this
+case come from 0 to 20910, it can not cover range of sensor (0 to
+21000).
+
+Root cause: The getSensorAttributes function rounded to the nearest
+integer value of M factor.
+
+Solution: Round up the M factor instead.
+
+Tested:
+    The M factor is update to 83 in above case.
+
+Upstream-Status: Pending
+
+Change-Id: I9d65ac7451900bcf16a6f2c5f904fd187f88fb44
+Signed-off-by: Thang Tran <thuutran@amperecomputing.com>
+---
+ dbus-sdr/sensorutils.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/dbus-sdr/sensorutils.cpp b/dbus-sdr/sensorutils.cpp
+index 8c6952b..255873e 100644
+--- a/dbus-sdr/sensorutils.cpp
++++ b/dbus-sdr/sensorutils.cpp
+@@ -215,7 +215,7 @@ bool getSensorAttributes(const double max, const double min, int16_t& mValue,
+         return false;
+     }
+
+-    mValue = static_cast<int16_t>(std::round(dM));
++    mValue = static_cast<int16_t>(std::ceil(dM));
+
+     normalizeIntExp(mValue, rExp, dM);
+
+--
+2.43.0
+

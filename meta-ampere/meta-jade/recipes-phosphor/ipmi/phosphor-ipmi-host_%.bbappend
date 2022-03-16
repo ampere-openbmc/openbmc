@@ -1,6 +1,7 @@
 FILESEXTRAPATHS:append := "${THISDIR}/${PN}:"
 
 PACKAGECONFIG:append = " dynamic-storages-only"
+
 DEPENDS:append = " mtjade-yaml-config"
 
 EXTRA_OEMESON = " \

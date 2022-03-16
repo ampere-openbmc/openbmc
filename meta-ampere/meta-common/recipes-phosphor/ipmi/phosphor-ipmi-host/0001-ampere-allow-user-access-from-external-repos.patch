@@ -1,0 +1,30 @@
+From 975f707323d3e7d33e4324bd0e474fc5340b22d8 Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieu.huynh@amperecomputing.com>
+Date: Fri, 24 Jun 2022 10:14:01 +0000
+Subject: [PATCH 01/11] ampere: allow user access from external repos
+
+Add user_channel/user_mgmt.hpp to allow external application like
+ampere-ipmi-oem to support some user access (create/delete) operations.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieu.huynh@amperecomputing.com>
+---
+ transporthandler.hpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/transporthandler.hpp b/transporthandler.hpp
+index 3285017..88fa220 100644
+--- a/transporthandler.hpp
++++ b/transporthandler.hpp
+@@ -3,6 +3,7 @@
+ #include "app/channel.hpp"
+ #include "transportconstants.hpp"
+ #include "user_channel/cipher_mgmt.hpp"
++#include "user_channel/user_mgmt.hpp"
+
+ #include <ipmid/api-types.hpp>
+ #include <ipmid/api.hpp>
+--
+2.43.0
+
