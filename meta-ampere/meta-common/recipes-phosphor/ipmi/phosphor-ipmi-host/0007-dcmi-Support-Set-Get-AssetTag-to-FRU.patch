@@ -1,0 +1,176 @@
+From ad296797b8806a1ea3eab631492b21e21dbc000b Mon Sep 17 00:00:00 2001
+From: HuyLe <hule@amperecomputing.com>
+Date: Tue, 30 Jul 2024 09:05:11 +0700
+Subject: [PATCH 07/10] dcmi: Support Set/Get AssetTag to FRU
+
+Asset tags can be found in many places. However, the system asset tag
+should be read from the system inventory and written with accuracy to
+the FRU device with ID 0. Below the step to get/set Asset Tag applied:
+Get Asset_Tag:
+   - Find the object path including interface [2] and prefix [1]
+   - Get Asset Tag with object path above
+Set Asset_Tag:
+   - Find the object path including the interface [2] [3] [4] and
+     prefix [1]
+   - Get the Bus and Address properties with object path above
+   - Scan Fru Device to get BUS and ADDRESS property
+   - Compare the properties Bus Adress GET before
+   - Set new Asset Tag for FRU device
+
+Tested:
+ a. Get system Asset Tag:
+    $ipmitool dcmi asset_tag
+ b. The same as Redfish value:
+    /redfish/v1/Systems/system
+ c. Write Asset Tag
+    $ipmitool dcmi set_asset_tag <new_asset_tag>
+ d. Wait 30 seconds, then check Asset Tag via ipmitool and Redfish
+    as step (a) and (b), the <new_asset_tag> is applied
+
+[1]. /xyz/openbmc_project/inventory/system
+[2]. xyz.openbmc_project.Inventory.Item.System
+[3]. xyz.openbmc_project.Inventory.Decorator.AssetTag
+[4]. xyz.openbmc_project.Inventory.Decorator.I2CDevice
+
+Upstream-Status: Pending
+
+Signed-off-by: HuyLe <hule@amperecomputing.com>
+---
+ dcmihandler.cpp | 85 ++++++++++++++++++++++++++++++++++++++++++-------
+ dcmihandler.hpp |  6 ++++
+ 2 files changed, 80 insertions(+), 11 deletions(-)
+
+diff --git a/dcmihandler.cpp b/dcmihandler.cpp
+index 20d75d9..41722ae 100644
+--- a/dcmihandler.cpp
++++ b/dcmihandler.cpp
+@@ -445,7 +445,8 @@ std::optional<std::string> readAssetTag(ipmi::Context::ptr& ctx)
+     // that has implemented the Asset tag interface.
+     ipmi::DbusObjectInfo objectInfo;
+     boost::system::error_code ec = getDbusObject(
+-        ctx, dcmi::assetTagIntf, ipmi::sensor::inventoryRoot, "", objectInfo);
++        ctx, dcmi::itemSystemIntf,
++        std::string(ipmi::sensor::inventoryRoot) + "/system", "", objectInfo);
+     if (ec.value())
+     {
+         return std::nullopt;
+@@ -470,25 +471,87 @@ bool writeAssetTag(ipmi::Context::ptr& ctx, const std::string& assetTag)
+ {
+     // Read the object tree with the inventory root to figure out the object
+     // that has implemented the Asset tag interface.
+-    ipmi::DbusObjectInfo objectInfo;
+-    boost::system::error_code ec = getDbusObject(
+-        ctx, dcmi::assetTagIntf, ipmi::sensor::inventoryRoot, "", objectInfo);
++    ipmi::ObjectTree objectTree;
++    std::string objectPath, serviceName;
++    boost::system::error_code ec = ipmi::getAllDbusObjects(
++        ctx, std::string(ipmi::sensor::inventoryRoot) + "/system",
++        dcmi::itemSystemIntf, objectTree);
+     if (ec.value())
+     {
+         return false;
+     }
+ 
+-    ec =
+-        ipmi::setDbusProperty(ctx, objectInfo.second, objectInfo.first,
+-                              dcmi::assetTagIntf, dcmi::assetTagProp, assetTag);
++    for (const auto& [objPath, serviceMap] : objectTree)
++    {
++        for (const auto& [service, intfs] : serviceMap)
++        {
++            auto assetTagIntfItr = std::find(intfs.begin(), intfs.end(),
++                                             dcmi::assetTagIntf);
++            auto i2cDevInfItr = std::find(intfs.begin(), intfs.end(),
++                                          dcmi::i2cDeviceInf);
++            if ((assetTagIntfItr == intfs.end()) ||
++                (i2cDevInfItr == intfs.end()))
++            {
++                return false;
++            }
++            objectPath = std::string(objPath);
++            serviceName = std::string(service);
++        }
++    }
++
++    ipmi::PropertyMap props;
++    ec = ipmi::getAllDbusProperties(ctx, serviceName, objectPath,
++                                    dcmi::i2cDeviceInf, props);
++
+     if (ec.value())
+     {
+-        lg2::error("Error in writing asset tag: {ERROR}", "ERROR",
+-                   ec.message());
+-        elog<InternalFailure>();
+         return false;
+     }
+-    return true;
++
++    uint64_t i2cDevBusProp = ipmi::mappedVariant<uint64_t>(props, "Bus", 0);
++    uint64_t i2cDevAddrProp = ipmi::mappedVariant<uint64_t>(props, "Address",
++                                                            0);
++    ec = ipmi::getAllDbusObjects(ctx, fruDeviceRoot, fruDeviceIntf, objectTree);
++    if (ec.value())
++    {
++        return false;
++    }
++
++    for (const auto& [path, serviceMap] : objectTree)
++    {
++        for (const auto& [service, intfs] : serviceMap)
++        {
++            ec = ipmi::getAllDbusProperties(ctx, service, path, fruDeviceIntf,
++                                            props);
++            if (ec.value())
++            {
++                return false;
++            }
++            uint64_t fruBusProp =
++                uint64_t(ipmi::mappedVariant<uint32_t>(props, "BUS", 0));
++            uint64_t fruAddrProp =
++                uint64_t(ipmi::mappedVariant<uint32_t>(props, "ADDRESS", 0));
++            if ((fruBusProp != i2cDevBusProp) ||
++                (fruAddrProp != i2cDevAddrProp))
++            {
++                continue;
++            }
++
++            ec = ipmi::setDbusProperty(ctx, service, path, fruDeviceIntf,
++                                       "PRODUCT_ASSET_TAG", assetTag);
++            if (ec.value())
++            {
++                log<level::ERR>("Error in writing asset tag",
++                                entry("ERROR=%s", ec.message().c_str()));
++                elog<InternalFailure>();
++                return false;
++            }
++            return true;
++        }
++    }
++
++    log<level::INFO>("Not found Fru Device to write");
++    return false;
+ }
+ 
+ std::optional<std::string> getHostName(ipmi::Context::ptr& ctx)
+diff --git a/dcmihandler.hpp b/dcmihandler.hpp
+index 8fa5e82..0d6fc14 100644
+--- a/dcmihandler.hpp
++++ b/dcmihandler.hpp
+@@ -12,8 +12,14 @@ namespace dcmi
+ {
+ 
+ static constexpr auto propIntf = "org.freedesktop.DBus.Properties";
++static constexpr auto itemSystemIntf =
++    "xyz.openbmc_project.Inventory.Item.System";
++static constexpr auto i2cDeviceInf =
++    "xyz.openbmc_project.Inventory.Decorator.I2CDevice";
+ static constexpr auto assetTagIntf =
+     "xyz.openbmc_project.Inventory.Decorator.AssetTag";
++static constexpr auto fruDeviceRoot = "/xyz/openbmc_project/FruDevice";
++static constexpr auto fruDeviceIntf = "xyz.openbmc_project.FruDevice";
+ static constexpr auto assetTagProp = "AssetTag";
+ static constexpr auto networkServiceName = "xyz.openbmc_project.Network";
+ static constexpr auto networkConfigObj = "/xyz/openbmc_project/network/config";
+-- 
+2.43.0
+
