@@ -1,0 +1,41 @@
+From 419139f02cb6de814c9cabf5096f7fb61d840e94 Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Mon, 16 Sep 2024 11:28:41 +0700
+Subject: [PATCH 09/10] dbus-sdr: replace sort with stable_sort function
+
+Issue: When multiple sensors reference to the same entity, the sort
+function can throw exception. It made the "dcmi sensors" and "dcmi
+get_temp_reading" request from ipmitool can be failed.
+
+Solution: replace sort function with stable_sort function to make
+sorting more stable when multiple sensors reference to the same entity.
+
+Tested:
+   1. Request to get dcmi sensor information
+      $ipmitool dcmi sensors
+   2. List of sensors are shown w/o issue
+   3. Request to get dcmi temperature reading
+      $ipmitool dcmi get_temp_reading
+   4. List of sensors are shown w/o issue
+
+Upstream-Status: Pending
+
+Change-Id: I82f13327a8da9ba267147e7ee5ead2604cb9395d
+Signed-off-by: Thang Tran <thuutran@amperecomputing.com>
+---
+ dbus-sdr/sensorcommands.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/dbus-sdr/sensorcommands.cpp b/dbus-sdr/sensorcommands.cpp
+index 2ef33b9..3090749 100644
+--- a/dbus-sdr/sensorcommands.cpp
++++ b/dbus-sdr/sensorcommands.cpp
+@@ -2616,7 +2616,7 @@ std::tuple<uint8_t,                // Total of instance sensors
+         return first.entityInstance <= second.entityInstance;
+     };
+ 
+-    sort(sensorList.begin(), sensorList.end(), cmpFunc);
++    stable_sort(sensorList.begin(), sensorList.end(), cmpFunc);
+ 
+     return std::make_tuple(totalInstSensor, sensorList);
+ }

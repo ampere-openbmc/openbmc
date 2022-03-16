@@ -1,0 +1,175 @@
+From 1f5f9b937ee7929881d348a242654858d90bb752 Mon Sep 17 00:00:00 2001
+From: HuyLe <hule@amperecomputing.com>
+Date: Mon, 17 Jun 2024 15:51:54 +0700
+Subject: [PATCH 02/10] Response thresholds for "Get SDR command"
+
+Section 33.12 in Ipmi spec v2.0 details about "Get SDR" command. When
+the byte_to_read byte of this command is 0xFF, the response data have to
+include the sensor thresholds. The phosphor-ipmi-host does not support
+that. This commit updates phosphor-ipmi-host to support responding the
+sensor theshold. There are many data bytes in sensor record. The commit
+only updates values for settable/readable threshold mask bytes and
+threshold buts in sensor initialization/capabilities bytes.
+
+Upstream-Status: Pending
+
+Signed-off-by: HuyLe <hule@amperecomputing.com>
+---
+ sensorhandler.cpp | 117 ++++++++++++++++++++++++++++++++++++++++++++++
+ sensorhandler.hpp |   8 ++++
+ 2 files changed, 125 insertions(+)
+
+diff --git a/sensorhandler.cpp b/sensorhandler.cpp
+index 134eaa6..aa2169b 100644
+--- a/sensorhandler.cpp
++++ b/sensorhandler.cpp
+@@ -806,6 +806,93 @@ get_sdr::GetSensorThresholdsResponse getSensorThresholds(
+     return resp;
+ }
+ 
++get_sdr::GetSensorThresholdsResponse getSensorSdr(uint8_t sensorNum)
++{
++    get_sdr::GetSensorThresholdsResponse resp{};
++    constexpr auto warningThreshIntf =
++        "xyz.openbmc_project.Sensor.Threshold.Warning";
++    constexpr auto criticalThreshIntf =
++        "xyz.openbmc_project.Sensor.Threshold.Critical";
++
++    sdbusplus::bus::bus bus{ipmid_get_sd_bus_connection()};
++    const auto iter = ipmi::sensor::sensors.find(sensorNum);
++    const auto info = iter->second;
++
++    auto service = ipmi::getService(bus, info.sensorInterface, info.sensorPath);
++
++    ipmi::sensor::PropertyMap warnThresholds{};
++    try
++    {
++        warnThresholds = ipmi::getAllDbusProperties(
++            bus, service, info.sensorPath, warningThreshIntf);
++    }
++    catch (const std::exception& e)
++    {
++        // No warning thresholds
++    }
++
++    double warnLow = ipmi::mappedVariant<double>(
++        warnThresholds, "WarningLow", std::numeric_limits<double>::quiet_NaN());
++    double warnHigh =
++        ipmi::mappedVariant<double>(warnThresholds, "WarningHigh",
++                                    std::numeric_limits<double>::quiet_NaN());
++
++    if (std::isfinite(warnLow))
++    {
++        warnLow *= std::pow(10, info.scale - info.exponentR);
++        resp.lowerNonCritical = static_cast<uint8_t>(
++            (warnLow - info.scaledOffset) / info.coefficientM);
++        resp.validMask |= static_cast<uint8_t>(
++            ipmi::sensor::ThresholdMask::NON_CRITICAL_LOW_MASK);
++    }
++
++    if (std::isfinite(warnHigh))
++    {
++        warnHigh *= std::pow(10, info.scale - info.exponentR);
++        resp.upperNonCritical = static_cast<uint8_t>(
++            (warnHigh - info.scaledOffset) / info.coefficientM);
++        resp.validMask |= static_cast<uint8_t>(
++            ipmi::sensor::ThresholdMask::NON_CRITICAL_HIGH_MASK);
++    }
++
++    ipmi::sensor::PropertyMap critThresholds{};
++    try
++    {
++        critThresholds = ipmi::getAllDbusProperties(
++            bus, service, info.sensorPath, criticalThreshIntf);
++    }
++    catch (const std::exception& e)
++    {
++        // No critical thresholds
++    }
++    double critLow =
++        ipmi::mappedVariant<double>(critThresholds, "CriticalLow",
++                                    std::numeric_limits<double>::quiet_NaN());
++    double critHigh =
++        ipmi::mappedVariant<double>(critThresholds, "CriticalHigh",
++                                    std::numeric_limits<double>::quiet_NaN());
++
++    if (std::isfinite(critLow))
++    {
++        critLow *= std::pow(10, info.scale - info.exponentR);
++        resp.lowerCritical = static_cast<uint8_t>(
++            (critLow - info.scaledOffset) / info.coefficientM);
++        resp.validMask |= static_cast<uint8_t>(
++            ipmi::sensor::ThresholdMask::CRITICAL_LOW_MASK);
++    }
++
++    if (std::isfinite(critHigh))
++    {
++        critHigh *= std::pow(10, info.scale - info.exponentR);
++        resp.upperCritical = static_cast<uint8_t>(
++            (critHigh - info.scaledOffset) / info.coefficientM);
++        resp.validMask |= static_cast<uint8_t>(
++            ipmi::sensor::ThresholdMask::CRITICAL_HIGH_MASK);
++    }
++
++    return resp;
++}
++
+ /** @brief implements the get sensor thresholds command
+  *  @param ctx - IPMI context pointer
+  *  @param sensorNum - sensor number
+@@ -1394,6 +1481,36 @@ ipmi_ret_t ipmi_sen_get_sdr(ipmi_netfn_t, ipmi_cmd_t, ipmi_request_t request,
+             get_sdr::body::init_settable_state(true, &(record.body));
+         }
+ 
++        /*
++        * read entire sensor record
++        * or read sensor data section
++        */
++        if (req->bytes_to_read == 0xff || (req->offset + req->bytes_to_read) > 5)
++        {
++            /* Read entire record */
++            get_sdr::GetSensorThresholdsResponse thresh{};
++            try
++            {
++                thresh = getSensorSdr(recordID);
++            }
++            catch (std::exception& e)
++            {
++                // Mask if the property is not present
++            }
++            if (thresh.validMask != 0)
++            {
++                get_sdr::body::init_thresh_state(true, &(record.body));
++                get_sdr::body::init_thresh_cap(2, &(record.body));
++            }
++            record.body.discrete_reading_setting_mask[0] = thresh.validMask;
++            record.body.discrete_reading_setting_mask[1] = thresh.validMask;
++            record.body.upper_nonrecoverable_threshold = thresh.upperNonCritical;
++            record.body.upper_critical_threshold = thresh.upperCritical;
++            record.body.upper_noncritical_threshold = thresh.upperNonRecoverable;
++            record.body.lower_nonrecoverable_threshold = thresh.lowerNonCritical;
++            record.body.lower_critical_threshold = thresh.lowerCritical;
++            record.body.lower_noncritical_threshold = thresh.lowerNonRecoverable;
++        }
+         // Set the type-specific details given the DBus interface
+         populate_record_from_dbus(&(record.body), &(sensor->second), data_len);
+         sdrCacheMap[sensor_id] = std::move(record);
+diff --git a/sensorhandler.hpp b/sensorhandler.hpp
+index 74b1862..21f25dd 100644
+--- a/sensorhandler.hpp
++++ b/sensorhandler.hpp
+@@ -478,6 +478,14 @@ inline void init_thresh_state(bool enabled, SensorDataFullRecordBody* body)
+         body->sensor_initialization &= ~(1 << 4);
+     }
+ };
++inline void init_thresh_cap(uint8_t mode, SensorDataFullRecordBody* body)
++{
++    body->sensor_capabilities &= ~(3 << 2);
++    if ((mode > 0) && (mode <= 3))
++    {
++        body->sensor_capabilities |= mode << 2;
++    }
++};
+ inline void init_events_state(bool enabled, SensorDataFullRecordBody* body)
+ {
+     if (enabled)
