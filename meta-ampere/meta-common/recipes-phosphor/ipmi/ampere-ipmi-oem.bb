@@ -13,8 +13,8 @@ inherit meson pkgconfig obmc-phosphor-ipmiprovider-symlink
 LIBRARY_NAMES = "libzampoemcmds.so"
 
 S = "${WORKDIR}/git"
-SRC_URI = "git://github.com/openbmc/ampere-ipmi-oem.git;branch=master;protocol=https"
-SRCREV = "1ef4665943d573df04aa2d1fcd45ffe48710e2a3"
+SRC_URI = "git://github.com/ampere-openbmc/ampere-ipmi-oem;protocol=https;branch=ampere"
+SRCREV = "40c953d9eddde008a925f29645270d381ebac855"
 
 HOSTIPMI_PROVIDER_LIBRARY += "${LIBRARY_NAMES}"
 NETIPMI_PROVIDER_LIBRARY += "${LIBRARY_NAMES}"
