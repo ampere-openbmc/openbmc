@@ -1,0 +1,105 @@
+From 1dad7bed94903be5ae616477bd26cb36e0f9248a Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Fri, 14 Jul 2023 15:05:45 +0700
+Subject: [PATCH 3/4] Add HostInterface dbus
+
+This commit add new DBus property "EnableAfterReset" and "Enabled"
+on "xyz.openbmc_project.State.Boot.Progress" DBus interface.
+This help to show the "CredentialBootstrapping:EnableAfterReset"
+and "CredentialBootstrapping:Enabled" status inside the Redfish
+Host Interface schema.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ .../CredentialBootstrapping/meson.build         | 15 +++++++++++++++
+ .../openbmc_project/HostInterface/meson.build   | 16 ++++++++++++++++
+ gen/xyz/openbmc_project/meson.build             |  1 +
+ .../CredentialBootstrapping.interface.yaml      | 17 +++++++++++++++++
+ 4 files changed, 49 insertions(+)
+ create mode 100644 gen/xyz/openbmc_project/HostInterface/CredentialBootstrapping/meson.build
+ create mode 100644 gen/xyz/openbmc_project/HostInterface/meson.build
+ create mode 100644 yaml/xyz/openbmc_project/HostInterface/CredentialBootstrapping.interface.yaml
+
+diff --git a/gen/xyz/openbmc_project/HostInterface/CredentialBootstrapping/meson.build b/gen/xyz/openbmc_project/HostInterface/CredentialBootstrapping/meson.build
+new file mode 100644
+index 0000000..692e619
+--- /dev/null
++++ b/gen/xyz/openbmc_project/HostInterface/CredentialBootstrapping/meson.build
+@@ -0,0 +1,15 @@
++# Generated file; do not modify.
++generated_sources += custom_target(
++    'xyz/openbmc_project/HostInterface/CredentialBootstrapping__cpp'.underscorify(),
++    input: [ '../../../../../yaml/xyz/openbmc_project/HostInterface/CredentialBootstrapping.interface.yaml',  ],
++    output: [ 'server.cpp', 'server.hpp', 'client.hpp',  ],
++    depend_files: sdbusplusplus_depfiles,
++    command: [
++        sdbuspp_gen_meson_prog, '--command', 'cpp',
++        '--output', meson.current_build_dir(),
++        '--tool', sdbusplusplus_prog,
++        '--directory', meson.current_source_dir() / '../../../../../yaml',
++        'xyz/openbmc_project/HostInterface/CredentialBootstrapping',
++    ],
++)
++
+diff --git a/gen/xyz/openbmc_project/HostInterface/meson.build b/gen/xyz/openbmc_project/HostInterface/meson.build
+new file mode 100644
+index 0000000..b31f2c9
+--- /dev/null
++++ b/gen/xyz/openbmc_project/HostInterface/meson.build
+@@ -0,0 +1,16 @@
++# Generated file; do not modify.
++subdir('CredentialBootstrapping')
++generated_others += custom_target(
++    'xyz/openbmc_project/HostInterface/CredentialBootstrapping__markdown'.underscorify(),
++    input: [ '../../../../yaml/xyz/openbmc_project/HostInterface/CredentialBootstrapping.interface.yaml',  ],
++    output: [ 'CredentialBootstrapping.md' ],
++    depend_files: sdbusplusplus_depfiles,
++    command: [
++        sdbuspp_gen_meson_prog, '--command', 'markdown',
++        '--output', meson.current_build_dir(),
++        '--tool', sdbusplusplus_prog,
++        '--directory', meson.current_source_dir() / '../../../../yaml',
++        'xyz/openbmc_project/HostInterface/CredentialBootstrapping',
++    ],
++)
++
+diff --git a/gen/xyz/openbmc_project/meson.build b/gen/xyz/openbmc_project/meson.build
+index f03b941..840593b 100644
+--- a/gen/xyz/openbmc_project/meson.build
++++ b/gen/xyz/openbmc_project/meson.build
+@@ -68,6 +68,7 @@ generated_others += custom_target(
+     ],
+ )
+
++subdir('HostInterface')
+ subdir('Inventory')
+ generated_others += custom_target(
+     'xyz/openbmc_project/Inventory__markdown'.underscorify(),
+diff --git a/yaml/xyz/openbmc_project/HostInterface/CredentialBootstrapping.interface.yaml b/yaml/xyz/openbmc_project/HostInterface/CredentialBootstrapping.interface.yaml
+new file mode 100644
+index 0000000..7431765
+--- /dev/null
++++ b/yaml/xyz/openbmc_project/HostInterface/CredentialBootstrapping.interface.yaml
+@@ -0,0 +1,17 @@
++description: >
++    Implement CredentialBootstrapping property of the host interface.
++
++properties:
++    - name: EnableAfterReset
++      default: false
++      type: boolean
++      description: >
++          This property shall indicate whether credential bootstrapping is
++          enabled after a reset for this interface.
++
++    - name: Enabled
++      default: true
++      type: boolean
++      description: >
++          This property shall indicate whether credential bootstrapping is
++          enabled for this interface.
+--
+2.34.1
+
