@@ -1,0 +1,200 @@
+From c70b4a374016f3af2cf81d09bbd70902ac504d6f Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Thu, 28 Nov 2024 10:20:38 +0000
+Subject: [PATCH] configuration: ampere: various updates
+
+Update Ampere platform configurations for internal required changes
+
+Fixes: ASR-18356, ASR-18372, ASR-18340, and ASR-16611
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+Change-Id: I4f071176d3a23029e2ead03c3dcc3c9f73818526
+---
+ configurations/mtjade.json          | 17 +++++++----------
+ configurations/mtjefferson_bmc.json |  2 +-
+ configurations/mtjefferson_mb.json  | 12 +++++++++++-
+ configurations/mtmitchell_bmc.json  |  2 +-
+ configurations/mtmitchell_mb.json   |  9 +++++++++
+ 5 files changed, 29 insertions(+), 13 deletions(-)
+
+diff --git a/configurations/mtjade.json b/configurations/mtjade.json
+index c78ef35..8a50c63 100644
+--- a/configurations/mtjade.json
++++ b/configurations/mtjade.json
+@@ -1644,19 +1644,14 @@
+                 "Type": "smpro_hwmon",
+                 "iout1_Max": 100,
+                 "iout1_Name": "S0_Core_VRD_Curr",
+-                "iout1_Scale": 1,
+                 "iout2_Max": 100,
+                 "iout2_Name": "S0_SOC_VRD_Curr",
+-                "iout2_Scale": 1,
+                 "iout3_Max": 100,
+                 "iout3_Name": "S0_DIMM_VR1_Curr",
+-                "iout3_Scale": 1,
+                 "iout4_Max": 100,
+                 "iout4_Name": "S0_DIMM_VR2_Curr",
+-                "iout4_Scale": 1,
+                 "iout5_Max": 100,
+                 "iout5_Name": "S0_RCA_VRD_Curr",
+-                "iout5_Scale": 1,
+                 "power1_Max": 200,
+                 "power1_Name": "S0_Core_VRD_Pwr",
+                 "power2_Max": 200,
+@@ -1856,19 +1851,14 @@
+                 "Type": "smpro_hwmon",
+                 "iout1_Max": 100,
+                 "iout1_Name": "S1_Core_VRD_Curr",
+-                "iout1_Scale": 1,
+                 "iout2_Max": 100,
+                 "iout2_Name": "S1_SOC_VRD_Curr",
+-                "iout2_Scale": 1,
+                 "iout3_Max": 100,
+                 "iout3_Name": "S1_DIMM_VR1_Curr",
+-                "iout3_Scale": 1,
+                 "iout4_Max": 100,
+                 "iout4_Name": "S1_DIMM_VR2_Curr",
+-                "iout4_Scale": 1,
+                 "iout5_Max": 100,
+                 "iout5_Name": "S1_RCA_VRD_Curr",
+-                "iout5_Scale": 1,
+                 "power1_Max": 200,
+                 "power1_Name": "S1_Core_VRD_Pwr",
+                 "power2_Max": 200,
+@@ -1941,6 +1931,10 @@
+         "xyz.openbmc_project.Inventory.Decorator.Revision": {
+             "Version": "$PRODUCT_VERSION"
+         },
++        "xyz.openbmc_project.Inventory.Decorator.I2CDevice": {
++            "Address": "$ADDRESS",
++            "Bus": "$BUS"
++        },
+         "xyz.openbmc_project.Inventory.Item.NetworkInterface": {
+             "MACAddress": "$BOARD_INFO_AM1"
+         },
+@@ -1973,6 +1967,9 @@
+         "xyz.openbmc_project.Inventory.Decorator.AssetTag": {
+             "AssetTag": "$PRODUCT_ASSET_TAG"
+         },
++        "xyz.openbmc_project.Software.Version": {
++            "Version": "$PRODUCT_VERSION"
++        },
+         "xyz.openbmc_project.Inventory.Decorator.Replaceable": {
+             "FieldReplaceable": false,
+             "HotPluggable": false
+diff --git a/configurations/mtjefferson_bmc.json b/configurations/mtjefferson_bmc.json
+index 7fd0700..e231980 100644
+--- a/configurations/mtjefferson_bmc.json
++++ b/configurations/mtjefferson_bmc.json
+@@ -76,7 +76,7 @@
+         "FieldReplaceable": false,
+         "HotPluggable": false
+     },
+-    "xyz.openbmc_project.Inventory.Item.BMC": {},
++    "xyz.openbmc_project.Inventory.Item.Bmc": {},
+     "xyz.openbmc_project.Inventory.Item.NetworkInterface": {
+         "MACAddress": "$BOARD_INFO_AM1"
+     }
+diff --git a/configurations/mtjefferson_mb.json b/configurations/mtjefferson_mb.json
+index 49134bc..a72c36e 100644
+--- a/configurations/mtjefferson_mb.json
++++ b/configurations/mtjefferson_mb.json
+@@ -248,7 +248,6 @@
+                 "MinValue": 0,
+                 "Name": "12V_FAN",
+                 "PollRate": 15,
+-                "PowerState": "ChassisOn",
+                 "ScaleFactor": 0.130434783,
+                 "Thresholds": [
+                     {
+@@ -1372,6 +1371,7 @@
+                 "MaxValue": 127,
+                 "MinValue": 0,
+                 "Name": "NVMeFBP_MaxTemp",
++                "PowerState": "ChassisOn",
+                 "Sensors": [
+                     "nvme0",
+                     "nvme1",
+@@ -1547,6 +1547,9 @@
+                 "Inputs": [
+                     "NVMeM2_MaxTemp"
+                 ],
++                "MissingIsAcceptable": [
++                    "NVMeM2_MaxTemp"
++                ],
+                 "Name": "Stepwise_NVMeM2_MaxTemp",
+                 "NegativeHysteresis": 2.0,
+                 "Output": [
+@@ -1977,6 +1980,10 @@
+         "xyz.openbmc_project.Inventory.Decorator.Revision": {
+             "Version": "$PRODUCT_VERSION"
+         },
++        "xyz.openbmc_project.Inventory.Decorator.I2CDevice": {
++            "Address": "$ADDRESS",
++            "Bus": "$BUS"
++        },
+         "xyz.openbmc_project.Inventory.Item.System": {}
+     },
+     {
+@@ -2004,6 +2011,9 @@
+         "xyz.openbmc_project.Inventory.Decorator.AssetTag": {
+             "AssetTag": "$PRODUCT_ASSET_TAG"
+         },
++        "xyz.openbmc_project.Software.Version": {
++            "Version": "$PRODUCT_VERSION"
++        },
+         "xyz.openbmc_project.Inventory.Decorator.Replaceable": {
+             "FieldReplaceable": false,
+             "HotPluggable": false
+diff --git a/configurations/mtmitchell_bmc.json b/configurations/mtmitchell_bmc.json
+index 227d78f..8ca8b8f 100644
+--- a/configurations/mtmitchell_bmc.json
++++ b/configurations/mtmitchell_bmc.json
+@@ -128,7 +128,7 @@
+         "FieldReplaceable": false,
+         "HotPluggable": false
+     },
+-    "xyz.openbmc_project.Inventory.Item.BMC": {},
++    "xyz.openbmc_project.Inventory.Item.Bmc": {},
+     "xyz.openbmc_project.Inventory.Item.NetworkInterface": {
+         "MACAddress": "$BOARD_INFO_AM1"
+     }
+diff --git a/configurations/mtmitchell_mb.json b/configurations/mtmitchell_mb.json
+index 69a303b..786af52 100644
+--- a/configurations/mtmitchell_mb.json
++++ b/configurations/mtmitchell_mb.json
+@@ -2254,6 +2254,8 @@
+         "Name": "Mt.Mitchell_Motherboard",
+         "Probe": [
+             "xyz.openbmc_project.FruDevice({'BOARD_PRODUCT_NAME': 'MB'})",
++            "OR",
++            "xyz.openbmc_project.FruDevice({'BOARD_PRODUCT_NAME': 'Davis MB'})",
+             "AND",
+             "FOUND('Mt.Mitchell_DCSCM_BMC')"
+         ],
+@@ -2279,6 +2281,10 @@
+         "xyz.openbmc_project.Inventory.Decorator.Revision": {
+             "Version": "$PRODUCT_VERSION"
+         },
++        "xyz.openbmc_project.Inventory.Decorator.I2CDevice": {
++            "Address": "$ADDRESS",
++            "Bus": "$BUS"
++        },
+         "xyz.openbmc_project.Inventory.Item.System": {}
+     },
+     {
+@@ -2308,6 +2314,9 @@
+         "xyz.openbmc_project.Inventory.Decorator.AssetTag": {
+             "AssetTag": "$PRODUCT_ASSET_TAG"
+         },
++        "xyz.openbmc_project.Software.Version": {
++            "Version": "$PRODUCT_VERSION"
++        },
+         "xyz.openbmc_project.Inventory.Decorator.Replaceable": {
+             "FieldReplaceable": false,
+             "HotPluggable": false
+--
+2.43.0
+
