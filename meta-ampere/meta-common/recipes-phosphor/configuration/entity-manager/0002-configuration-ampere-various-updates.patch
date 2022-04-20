@@ -1,0 +1,100 @@
+From 1e4491500e53258be909ec0d11d6efa1d8283661 Mon Sep 17 00:00:00 2001
+From: "Thang Q. Nguyen" <thang@os.amperecomputing.com>
+Date: Thu, 24 Oct 2024 02:16:17 +0000
+Subject: [PATCH] configuration: ampere: various updates
+
+Update Ampere platform configurations for internal required changes
+
+Upstream-Status: Pending
+
+Signed-off-by: Thang Q. Nguyen <thang@os.amperecomputing.com>
+---
+ configurations/mtjade.json         | 7 +++++++
+ configurations/mtjefferson_mb.json | 7 +++++++
+ configurations/mtmitchell_mb.json  | 9 +++++++++
+ 3 files changed, 23 insertions(+)
+
+diff --git a/configurations/mtjade.json b/configurations/mtjade.json
+index ef1bcc7..8a50c63 100644
+--- a/configurations/mtjade.json
++++ b/configurations/mtjade.json
+@@ -1931,6 +1931,10 @@
+         "xyz.openbmc_project.Inventory.Decorator.Revision": {
+             "Version": "$PRODUCT_VERSION"
+         },
++        "xyz.openbmc_project.Inventory.Decorator.I2CDevice": {
++            "Address": "$ADDRESS",
++            "Bus": "$BUS"
++        },
+         "xyz.openbmc_project.Inventory.Item.NetworkInterface": {
+             "MACAddress": "$BOARD_INFO_AM1"
+         },
+@@ -1963,6 +1967,9 @@
+         "xyz.openbmc_project.Inventory.Decorator.AssetTag": {
+             "AssetTag": "$PRODUCT_ASSET_TAG"
+         },
++        "xyz.openbmc_project.Software.Version": {
++            "Version": "$PRODUCT_VERSION"
++        },
+         "xyz.openbmc_project.Inventory.Decorator.Replaceable": {
+             "FieldReplaceable": false,
+             "HotPluggable": false
+diff --git a/configurations/mtjefferson_mb.json b/configurations/mtjefferson_mb.json
+index 776bc92..0feeef2 100644
+--- a/configurations/mtjefferson_mb.json
++++ b/configurations/mtjefferson_mb.json
+@@ -2223,6 +2223,10 @@
+         "xyz.openbmc_project.Inventory.Decorator.Revision": {
+             "Version": "$PRODUCT_VERSION"
+         },
++        "xyz.openbmc_project.Inventory.Decorator.I2CDevice": {
++            "Address": "$ADDRESS",
++            "Bus": "$BUS"
++        },
+         "xyz.openbmc_project.Inventory.Item.System": {}
+     },
+     {
+@@ -2252,6 +2256,9 @@
+         "xyz.openbmc_project.Inventory.Decorator.AssetTag": {
+             "AssetTag": "$PRODUCT_ASSET_TAG"
+         },
++        "xyz.openbmc_project.Software.Version": {
++            "Version": "$PRODUCT_VERSION"
++        },
+         "xyz.openbmc_project.Inventory.Decorator.Replaceable": {
+             "FieldReplaceable": false,
+             "HotPluggable": false
+diff --git a/configurations/mtmitchell_mb.json b/configurations/mtmitchell_mb.json
+index 69a303b..786af52 100644
+--- a/configurations/mtmitchell_mb.json
++++ b/configurations/mtmitchell_mb.json
+@@ -2254,6 +2254,8 @@
+         "Name": "Mt.Mitchell_Motherboard",
+         "Probe": [
+             "xyz.openbmc_project.FruDevice({'BOARD_PRODUCT_NAME': 'MB'})",
++            "OR",
++            "xyz.openbmc_project.FruDevice({'BOARD_PRODUCT_NAME': 'Davis MB'})",
+             "AND",
+             "FOUND('Mt.Mitchell_DCSCM_BMC')"
+         ],
+@@ -2279,6 +2281,10 @@
+         "xyz.openbmc_project.Inventory.Decorator.Revision": {
+             "Version": "$PRODUCT_VERSION"
+         },
++        "xyz.openbmc_project.Inventory.Decorator.I2CDevice": {
++            "Address": "$ADDRESS",
++            "Bus": "$BUS"
++        },
+         "xyz.openbmc_project.Inventory.Item.System": {}
+     },
+     {
+@@ -2308,6 +2314,9 @@
+         "xyz.openbmc_project.Inventory.Decorator.AssetTag": {
+             "AssetTag": "$PRODUCT_ASSET_TAG"
+         },
++        "xyz.openbmc_project.Software.Version": {
++            "Version": "$PRODUCT_VERSION"
++        },
+         "xyz.openbmc_project.Inventory.Decorator.Replaceable": {
+             "FieldReplaceable": false,
+             "HotPluggable": false
