@@ -1,0 +1,53 @@
+From 6926cda0f3d30b185d20db9b546429c7884e6fb3 Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Thu, 24 Oct 2024 02:14:27 +0000
+Subject: [PATCH 1/4] Generate UUID if not exist in FRU
+
+In case there is no UUID in FRU, generate a new one using
+sd_id128_get_machine_app_specific(3).
+
+Upstream-Status: Pending
+
+Change-Id: Ib1b9b25039ff08d96ed9f3c0f8aef8dbc1a74c87
+Co-authored-by: Khang D Nguyen <khangng@os.amperecomputing.com>
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ src/fru_device/fru_utils.cpp | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/src/fru_device/fru_utils.cpp b/src/fru_device/fru_utils.cpp
+index 0a1f583..0216c3e 100644
+--- a/src/fru_device/fru_utils.cpp
++++ b/src/fru_device/fru_utils.cpp
+@@ -35,6 +35,7 @@ extern "C"
+ {
+ // Include for I2C_SMBUS_BLOCK_MAX
+ #include <linux/i2c.h>
++#include <systemd/sd-id128.h>
+ }
+ 
+ constexpr size_t fruVersion = 1; // Current FRU spec version number is 1
+@@ -313,6 +314,23 @@ static void parseMultirecordUUID(
+ 
+     if (areaOffset == 0)
+     {
++        /* Just generate UUID for the MB FRU with CHASSIS_TYPE is "23" */
++        if ((result.find("MULTIRECORD_UUID") == result.end()) &&
++            (result.find("CHASSIS_TYPE") != result.end()) &&
++            (result["CHASSIS_TYPE"] == "23"))
++        {
++            /* Random app specific ID, see sd_id128_get_machine_app_specific(3).
++             * This ID will persist across reboots and be resetted at factory
++             * reset.
++             */
++            sd_id128_t id;
++            char uuid_str[37];
++            constexpr sd_id128_t APP_SPECIFIC_ID = SD_ID128_MAKE(
++                06, 8e, f5, d7, d5, 33, 41, 54, 81, b3, 99, 0a, 2a, d3, 07, a6);
++            sd_id128_get_machine_app_specific(APP_SPECIFIC_ID, &id);
++            sd_id128_to_uuid_string(id, uuid_str);
++            result["MULTIRECORD_UUID"] = std::string(uuid_str);
++        }
+         return;
+     }
+ 
