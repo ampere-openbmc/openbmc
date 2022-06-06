@@ -1,0 +1,275 @@
+{
+    "entries": [
+        {
+            "mctp_eid": 20,
+            "effecter_info": {
+                "effecterPdrType": 9,
+                "effecterID": 2,
+                "entityType": 32903,
+                "entityInstance": 2,
+                "containerID": 2,
+                "compositeEffecterCount": 1,
+                "checkHostState": false
+            },
+            "effecters": [
+                {
+                    "dbus_info": {
+                        "object_path": "/xyz/openbmc_project/effecters/oem/S0_DRAM_MThrotEn",
+                        "interface": "xyz.openbmc_project.Sensor.Value",
+                        "property_name": "Value",
+                        "property_type": "double"
+                    },
+                    "effecterDataSize": 5,
+                    "resolution": 1,
+                    "offset": 0,
+                    "unitModifier": 0
+                }
+            ]
+        },
+        {
+            "mctp_eid": 20,
+            "effecter_info": {
+                "effecterPdrType": 9,
+                "effecterID": 155,
+                "entityType": 32903,
+                "entityInstance": 6,
+                "containerID": 4,
+                "compositeEffecterCount": 1,
+                "checkHostState": false
+            },
+            "effecters": [
+                {
+                    "dbus_info": {
+                        "object_path": "/xyz/openbmc_project/effecters/power/S0_PLimit",
+                        "interface": "xyz.openbmc_project.Sensor.Value",
+                        "property_name": "Value",
+                        "property_type": "double"
+                    },
+                    "effecterDataSize": 5,
+                    "resolution": 1,
+                    "offset": 0,
+                    "unitModifier": -3
+                }
+
+            ]
+        },
+        {
+            "mctp_eid": 20,
+            "effecter_info": {
+                "effecterPdrType": 9,
+                "effecterID": 159,
+                "entityType": 32906,
+                "entityInstance": 8,
+                "containerID": 4,
+                "compositeEffecterCount": 1,
+                "checkHostState": false
+            },
+            "effecters": [
+                {
+                    "dbus_info": {
+                        "object_path": "/xyz/openbmc_project/effecters/power/S0_PMin_Pwr_Lmt",
+                        "interface": "xyz.openbmc_project.Sensor.Value",
+                        "property_name": "Value",
+                        "property_type": "double"
+                    },
+                    "effecterDataSize": 5,
+                    "resolution": 1,
+                    "offset": 0,
+                    "unitModifier": -3
+                }
+
+            ]
+        },
+        {
+            "mctp_eid": 20,
+            "effecter_info": {
+                "effecterPdrType": 9,
+                "effecterID": 204,
+                "entityType": 32799,
+                "entityInstance": 14,
+                "containerID": 6,
+                "compositeEffecterCount": 1,
+                "checkHostState": false
+            },
+            "effecters": [
+                {
+                    "dbus_info": {
+                        "object_path": "/xyz/openbmc_project/effecters/count/S0_Effecter_204",
+                        "interface": "xyz.openbmc_project.Sensor.Value",
+                        "property_name": "Value",
+                        "property_type": "double"
+                    },
+                    "effecterDataSize": 5,
+                    "resolution": 1,
+                    "offset": 0,
+                    "unitModifier": 0
+                }
+
+            ]
+        },
+        {
+            "mctp_eid": 20,
+            "effecter_info": {
+                "effecterPdrType": 9,
+                "effecterID": 201,
+                "entityType": 32799,
+                "entityInstance": 11,
+                "containerID": 6,
+                "compositeEffecterCount": 1,
+                "effecterDataSize": 5,
+                "checkHostState": false
+            },
+            "effecters": [
+                {
+                    "dbus_info": {
+                        "object_path": "/xyz/openbmc_project/effecters/count/S0_Effecter_201",
+                        "interface": "xyz.openbmc_project.Sensor.Value",
+                        "property_name": "Value",
+                        "property_type": "double"
+                    },
+                    "effecterDataSize": 5,
+                    "resolution": 1,
+                    "offset": 0,
+                    "unitModifier": 0
+                }
+
+            ]
+        },
+        {
+            "mctp_eid": 22,
+            "effecter_info": {
+                "effecterPdrType": 9,
+                "effecterID": 2,
+                "entityType": 32903,
+                "entityInstance": 2,
+                "containerID": 2,
+                "compositeEffecterCount": 1,
+                "checkHostState": false
+            },
+            "effecters": [
+                {
+                    "dbus_info": {
+                        "object_path": "/xyz/openbmc_project/effecters/oem/S1_DRAM_MThrotEn",
+                        "interface": "xyz.openbmc_project.Sensor.Value",
+                        "property_name": "Value",
+                        "property_type": "double"
+                    },
+                    "effecterDataSize": 5,
+                    "resolution": 1,
+                    "offset": 0,
+                    "unitModifier": 0
+                }
+            ]
+        },
+        {
+            "mctp_eid": 22,
+            "effecter_info": {
+                "effecterPdrType": 9,
+                "effecterID": 155,
+                "entityType": 32903,
+                "entityInstance": 6,
+                "containerID": 4,
+                "compositeEffecterCount": 1,
+                "checkHostState": false
+            },
+            "effecters": [
+                {
+                    "dbus_info": {
+                        "object_path": "/xyz/openbmc_project/effecters/power/S1_PLimit",
+                        "interface": "xyz.openbmc_project.Sensor.Value",
+                        "property_name": "Value",
+                        "property_type": "double"
+                    },
+                    "effecterDataSize": 5,
+                    "resolution": 1,
+                    "offset": 0,
+                    "unitModifier": -3
+                }
+
+            ]
+        },
+        {
+            "mctp_eid": 22,
+            "effecter_info": {
+                "effecterPdrType": 9,
+                "effecterID": 159,
+                "entityType": 32906,
+                "entityInstance": 8,
+                "containerID": 4,
+                "compositeEffecterCount": 1,
+                "checkHostState": false
+            },
+            "effecters": [
+                {
+                    "dbus_info": {
+                        "object_path": "/xyz/openbmc_project/effecters/power/S1_PMin_Pwr_Lmt",
+                        "interface": "xyz.openbmc_project.Sensor.Value",
+                        "property_name": "Value",
+                        "property_type": "double"
+                    },
+                    "effecterDataSize": 5,
+                    "resolution": 1,
+                    "offset": 0,
+                    "unitModifier": -3
+                }
+
+            ]
+        },
+        {
+            "mctp_eid": 22,
+            "effecter_info": {
+                "effecterPdrType": 9,
+                "effecterID": 204,
+                "entityType": 32799,
+                "entityInstance": 14,
+                "containerID": 6,
+                "compositeEffecterCount": 1,
+                "checkHostState": false
+            },
+            "effecters": [
+                {
+                    "dbus_info": {
+                        "object_path": "/xyz/openbmc_project/effecters/count/S1_Effecter_204",
+                        "interface": "xyz.openbmc_project.Sensor.Value",
+                        "property_name": "Value",
+                        "property_type": "double"
+                    },
+                    "effecterDataSize": 5,
+                    "resolution": 1,
+                    "offset": 0,
+                    "unitModifier": 0
+                }
+
+            ]
+        },
+        {
+            "mctp_eid": 22,
+            "effecter_info": {
+                "effecterPdrType": 9,
+                "effecterID": 201,
+                "entityType": 32799,
+                "entityInstance": 11,
+                "containerID": 6,
+                "compositeEffecterCount": 1,
+                "effecterDataSize": 5,
+                "checkHostState": false
+            },
+            "effecters": [
+                {
+                    "dbus_info": {
+                        "object_path": "/xyz/openbmc_project/effecters/count/S1_Effecter_201",
+                        "interface": "xyz.openbmc_project.Sensor.Value",
+                        "property_name": "Value",
+                        "property_type": "double"
+                    },
+                    "effecterDataSize": 5,
+                    "resolution": 1,
+                    "offset": 0,
+                    "unitModifier": 0
+                }
+
+            ]
+        }
+    ]
+
+}

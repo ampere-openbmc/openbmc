@@ -6,6 +6,7 @@ SRC_URI:append = " \
                   file://mctp-local.service \
                   file://mctpd.conf \
                  "
+SRCREV = "9986862f88fd6e6ca75e2a29236cf332d640e600"
 
 SYSTEMD_SERVICE:${PN} += "mctp-local.service"
 
