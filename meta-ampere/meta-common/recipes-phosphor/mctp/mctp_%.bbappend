@@ -6,7 +6,6 @@ SRC_URI:append = " \
                   file://mctp-local.service \
                   file://mctpd.conf \
                  "
-
 SYSTEMD_SERVICE:${PN} += "mctp-local.service"
 
 EXTRA_OEMESON:append = " \
