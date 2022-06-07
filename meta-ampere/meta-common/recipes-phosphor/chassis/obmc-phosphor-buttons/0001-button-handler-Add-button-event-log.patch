@@ -1,0 +1,71 @@
+From e51903c929590cdb1dd66478edd350c1c7cdd435 Mon Sep 17 00:00:00 2001
+From: Chanh Nguyen <chanh@os.amperecomputing.com>
+Date: Thu, 15 Aug 2024 09:37:23 +0000
+Subject: [PATCH] button-handler: Add button event log
+
+Support the Redfish log once the power button and the reset
+button were pressed.
+
+Upstream-Status: Pending
+
+Signed-off-by: HuyLe <hule@amperecomputing.com>
+Signed-off-by: Chanh Nguyen <chanh@os.amperecomputing.com>
+Change-Id: Ifa2ac1eeb022402d78a73a7a04fc976c27dfaf32
+---
+ src/button_handler.cpp | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/src/button_handler.cpp b/src/button_handler.cpp
+index 99ce739..4dc6cd8 100644
+--- a/src/button_handler.cpp
++++ b/src/button_handler.cpp
+@@ -8,6 +8,7 @@
+ #include <xyz/openbmc_project/Chassis/Buttons/Power/server.hpp>
+ #include <xyz/openbmc_project/State/Chassis/server.hpp>
+ #include <xyz/openbmc_project/State/Host/server.hpp>
++#include <systemd/sd-journal.h>
+
+ #include <fstream>
+ #include <iostream>
+@@ -47,6 +48,7 @@ constexpr auto mapperService = "xyz.openbmc_project.ObjectMapper";
+ constexpr auto BMC_POSITION = 0;
+
+ std::vector<std::map<uint16_t, Chassis::Transition>> multiPwrBtnActConf;
++std::string redfishMsgId;
+
+ Handler::Handler(sdbusplus::bus_t& bus) : bus(bus)
+ {
+@@ -341,6 +343,9 @@ void Handler::handlePowerEvent(PowerEvent powerEventType,
+                 {
+                     transition = Host::Transition::Off;
+                 }
++
++                redfishMsgId = "OpenBMC.0.1.PowerButtonPressed";
++                sd_journal_send("REDFISH_MESSAGE_ID=%s", redfishMsgId.c_str(), NULL);
+                 lg2::info("handlePowerEvent : Handle power button press ");
+                 break;
+             }
+@@ -372,7 +377,10 @@ void Handler::handlePowerEvent(PowerEvent powerEventType,
+                         "Power is off so ignoring long power button press");
+                     return;
+                 }
+-                lg2::info("handlePowerEvent : handle long power button press");
++
++                redfishMsgId = "OpenBMC.0.1.PowerButtonLongPressed";
++                sd_journal_send("REDFISH_MESSAGE_ID=%s", redfishMsgId.c_str(), NULL);
++		 lg2::info("handlePowerEvent : handle long power button press");
+                 break;
+             }
+         }
+@@ -388,6 +396,8 @@ void Handler::handlePowerEvent(PowerEvent powerEventType,
+                 return;
+             }
+
++            redfishMsgId = "OpenBMC.0.1.ResetButtonPressed";
++            sd_journal_send("REDFISH_MESSAGE_ID=%s", redfishMsgId.c_str(), NULL);
+             lg2::info("Handling reset button press");
+ #ifdef ENABLE_RESET_BUTTON_DO_WARM_REBOOT
+             transition = Host::Transition::ForceWarmReboot;
+--
+2.25.1
+
