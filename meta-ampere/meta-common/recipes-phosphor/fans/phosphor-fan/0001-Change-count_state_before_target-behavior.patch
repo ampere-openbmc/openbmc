@@ -1,0 +1,90 @@
+From 1ec3e11b583687f008d55190256de87d1ffc72de Mon Sep 17 00:00:00 2001
+From: Chau Ly <chaul@amperecomputing.com>
+Date: Wed, 7 Jun 2023 09:13:56 +0000
+Subject: [PATCH] Change count_state_before_target behavior
+
+Upstream-Status: Pending
+
+Signed-off-by: Chau Ly <chaul@amperecomputing.com>
+---
+ control/json/actions/count_state_target.cpp | 30 +++++++++++++--------
+ control/json/actions/count_state_target.hpp |  3 +++
+ 2 files changed, 22 insertions(+), 11 deletions(-)
+
+diff --git a/control/json/actions/count_state_target.cpp b/control/json/actions/count_state_target.cpp
+index dcbd70d..016d45d 100644
+--- a/control/json/actions/count_state_target.cpp
++++ b/control/json/actions/count_state_target.cpp
+@@ -40,9 +40,13 @@ CountStateTarget::CountStateTarget(const json& jsonObj,
+
+ void CountStateTarget::run(Zone& zone)
+ {
+-    size_t numAtState = 0;
++    bool thisTimeAtState = false;
+     for (const auto& group : _groups)
+     {
++        if (thisTimeAtState)
++        {
++            break;
++        }
+         for (const auto& member : group.getMembers())
+         {
+             try
+@@ -50,26 +54,30 @@ void CountStateTarget::run(Zone& zone)
+                 if (Manager::getObjValueVariant(member, group.getInterface(),
+                                                 group.getProperty()) == _state)
+                 {
+-                    numAtState++;
++                    thisTimeAtState = true;
++                    break;
+                 }
+             }
+             catch (const std::out_of_range& oore)
+             {
+-                // Default to property not equal when not found
+-            }
+-            if (numAtState >= _count)
+-            {
++                thisTimeAtState = true;
+                 break;
+             }
+         }
+-        if (numAtState >= _count)
+-        {
+-            break;
+-        }
++    }
++
++    if (thisTimeAtState)
++    {
++        _numAtState++;
++    }
++    else
++    {
++        /* Resume thermal control action when sensors are functional again */
++        _numAtState = 0;
+     }
+
+     // Update zone's target hold based on action results
+-    zone.setTargetHold(getUniqueName(), _target, (numAtState >= _count));
++    zone.setTargetHold(getUniqueName(), _target, (_numAtState >= _count));
+ }
+
+ void CountStateTarget::setCount(const json& jsonObj)
+diff --git a/control/json/actions/count_state_target.hpp b/control/json/actions/count_state_target.hpp
+index 3874847..95fa79b 100644
+--- a/control/json/actions/count_state_target.hpp
++++ b/control/json/actions/count_state_target.hpp
+@@ -83,6 +83,9 @@ class CountStateTarget :
+     /* Unique id of this action */
+     size_t _id;
+
++    /* Number of time group members have the values at state */
++    size_t _numAtState = 0;
++
+     /**
+      * @brief Parse and set the count
+      *
+--
+2.25.1
+

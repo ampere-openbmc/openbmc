@@ -20,5 +20,5 @@ SRC_URI += " \
 do_install:append () {
         install -d ${D}${systemd_system_unitdir}
         install -m 0644 ${UNPACKDIR}/*.service ${D}${systemd_system_unitdir}
-        rm ${D}${bindir}/fanctl
+        rm -f ${D}${bindir}/fanctl
 }
