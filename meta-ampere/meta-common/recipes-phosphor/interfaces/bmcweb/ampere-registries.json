@@ -1,0 +1,67 @@
+{
+    "Messages": {
+        "AmpereCritical": {
+            "Description": "Indicates an Ampere critical event",
+            "Message": "%1: %2",
+            "MessageSeverity": "Critical",
+            "NumberOfArgs": 2,
+            "ParamTypes": ["string", "string"],
+            "Resolution": "None.",
+            "Severity": "Critical"
+        },
+        "AmpereEvent": {
+            "Description": "Indicates an Ampere OK event",
+            "Message": "%1",
+            "MessageSeverity": "OK",
+            "NumberOfArgs": 1,
+            "ParamTypes": ["string"],
+            "Resolution": "None.",
+            "Severity": "OK"
+        },
+        "AmpereWarning": {
+            "Description": "Indicates an Ampere warning event",
+            "Message": "%1: %2",
+            "MessageSeverity": "Warning",
+            "NumberOfArgs": 2,
+            "ParamTypes": ["string", "string"],
+            "Resolution": "None.",
+            "Severity": "Warning"
+        },
+        "MemoryExtendedECCCEData": {
+            "Description": "Indicates additional Memory ECC Correctable error data.",
+            "Message": "Memory ECC Correctable Error Extended Data. bank=%1 row=%2 column=%3.",
+            "MessageSeverity": "Critical",
+            "NumberOfArgs": 3,
+            "ParamTypes": ["number", "number", "number"],
+            "Resolution": "None.",
+            "Severity": "Critical"
+        },
+        "MemoryExtendedECCUEData": {
+            "Description": "Indicates additional Memory ECC Uncorrectable error data.",
+            "Message": "Memory ECC Uncorrectable Error Extended Data. bank=%1 row=%2 column=%3.",
+            "MessageSeverity": "Critical",
+            "NumberOfArgs": 3,
+            "ParamTypes": ["number", "number", "number"],
+            "Resolution": "None.",
+            "Severity": "Critical"
+        },
+        "TotalPowerConsumptionDropBelowTheLimit": {
+            "Description": "Indicate the total power consumption drops below the power limit",
+            "Message": "Total power consumption drops below power limit. The total power consumption is %1, the power limit is %2.",
+            "MessageSeverity": "OK",
+            "NumberOfArgs": 2,
+            "ParamTypes": ["number", "number"],
+            "Resolution": "None.",
+            "Severity": "OK"
+        },
+        "TotalPowerConsumptionExceedTheLimit": {
+            "Description": "Indicate the total power consumption exceeds the power limit",
+            "Message": "Total power consumption exeeds power limit. The total power consumption is %1, the power limit is %2.",
+            "MessageSeverity": "Critical",
+            "NumberOfArgs": 2,
+            "ParamTypes": ["number", "number"],
+            "Resolution": "None.",
+            "Severity": "Critical"
+        }
+    }
+}
