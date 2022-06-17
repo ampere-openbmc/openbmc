@@ -1,0 +1,83 @@
+From 8f5a7bcb4c2c4f406cbeaff3310acf7ae496b7b9 Mon Sep 17 00:00:00 2001
+From: Jayaprakash Mutyala <mutyalax.jayaprakash@intel.com>
+Date: Wed, 17 Apr 2024 10:05:09 +0000
+Subject: [PATCH] Fix for Redfish URI - Sensors Chassis Baseboard
+
+Under sensors URI /redfish/v1/Chassis/<Board_Name>/Sensors/
+for any sensor, data populate with full response and response code is
+200 OK for invalid baseboard platform string as well.
+
+To fix this issue, collect Redfish URI baseboard name and compare with
+user provided URL baseboard name.
+
+Tested:
+- Redfish validator is passed with this change.
+- For invalid baseboard name in RedFish URI getting HTTP response as
+  "404 Not Found" for GET method.
+
+Upstream-Status: Pending
+
+Signed-off-by: poram srinivasa rao <poramx.srinivasa.rao@intel.com>
+Signed-off-by: Jayaprakash Mutyala <mutyalax.jayaprakash@intel.com>
+Change-Id: I68244726d41b6196a8a5625519dfe1a761673774
+---
+ redfish-core/lib/sensors.hpp | 27 ++++++++++++++++++++++-----
+ 1 file changed, 22 insertions(+), 5 deletions(-)
+
+diff --git a/redfish-core/lib/sensors.hpp b/redfish-core/lib/sensors.hpp
+index 697e3c5a..51230b0b 100644
+--- a/redfish-core/lib/sensors.hpp
++++ b/redfish-core/lib/sensors.hpp
+@@ -23,6 +23,7 @@ limitations under the License.
+ #include "query.hpp"
+ #include "registries/privilege_registry.hpp"
+ #include "str_utility.hpp"
++#include "utils/chassis_utils.hpp"
+ #include "utils/dbus_utils.hpp"
+ #include "utils/json_utils.hpp"
+ #include "utils/query_param.hpp"
+@@ -2427,13 +2428,14 @@ inline void
+         });
+ }
+
+-inline void handleSensorGet(App& app, const crow::Request& req,
+-                            const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
+-                            const std::string& chassisId,
+-                            const std::string& sensorId)
++inline void doSensorGet(const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++                        const std::string& chassisId,
++                        const std::string& sensorId,
++                        const std::optional<std::string>& validChassisPath)
+ {
+-    if (!redfish::setUpRedfishRoute(app, req, asyncResp))
++    if (!validChassisPath)
+     {
++        messages::resourceNotFound(asyncResp->res, "Chassis", chassisId);
+         return;
+     }
+     std::pair<std::string, std::string> nameType =
+@@ -2479,6 +2481,21 @@ inline void handleSensorGet(App& app, const crow::Request& req,
+         });
+ }
+
++inline void handleSensorGet(App& app, const crow::Request& req,
++                            const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++                            const std::string& chassisId,
++                            const std::string& sensorId)
++{
++    if (!redfish::setUpRedfishRoute(app, req, asyncResp))
++    {
++        return;
++    }
++
++    redfish::chassis_utils::getValidChassisPath(
++        asyncResp, chassisId,
++        std::bind_front(doSensorGet, asyncResp, chassisId, sensorId));
++}
++
+ } // namespace sensors
+
+ inline void requestRoutesSensorCollection(App& app)
+--
+2.25.1
+

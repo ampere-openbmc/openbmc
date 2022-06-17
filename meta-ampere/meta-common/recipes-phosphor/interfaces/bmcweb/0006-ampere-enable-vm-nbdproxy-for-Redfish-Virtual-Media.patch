@@ -1,0 +1,99 @@
+From b9dd665fecbffc827c6b8c2f5ae1a9e882a73b80 Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Mon, 3 Jun 2024 11:42:33 +0700
+Subject: [PATCH] ampere: enable vm-nbdproxy for Redfish Virtual Media
+
+Community complains that no active support for virtual media and no
+backend codes were implemented. This make the vm-nbdproxy option becomes
+redundant and should be removed.
+Refer to https://github.com/openbmc/bmcweb/issues/188.
+However, we need this option for Redfish Virtual Media support so re-enable
+it locally.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ config/meson.build       |  3 ++-
+ include/vm_websocket.hpp | 13 +++----------
+ meson.options            | 12 ++++++------
+ 3 files changed, 11 insertions(+), 17 deletions(-)
+
+diff --git a/config/meson.build b/config/meson.build
+index 0f08bcf9..e21df89e 100644
+--- a/config/meson.build
++++ b/config/meson.build
+@@ -38,6 +38,7 @@ feature_options = [
+     'tests',
+     'vm-websocket',
+     'xtoken-auth',
++    'vm-nbdproxy',
+ ]
+
+ string_options = [
+@@ -81,7 +82,7 @@ loglvlopt = loglvlopt.to_upper()
+ string_options_string += 'constexpr std::string_view  BMCWEB_LOGGING_LEVEL' + ' = "' + loglvlopt + '";\n'
+
+ # NBD proxy is disabled due to lack of maintenance.  See meson_options.txt
+-feature_options_string += 'constexpr const bool        BMCWEB_VM_NBDPROXY = false;\n'
++# feature_options_string += 'constexpr const bool        BMCWEB_VM_NBDPROXY = false;\n'
+
+ conf_data.set(
+     'BMCWEB_OPTIONS',
+diff --git a/include/vm_websocket.hpp b/include/vm_websocket.hpp
+index 1e56cd98..b80ce00f 100644
+--- a/include/vm_websocket.hpp
++++ b/include/vm_websocket.hpp
+@@ -525,9 +525,9 @@ namespace obmc_vm
+
+ inline void requestRoutes(App& app)
+ {
+-    static_assert(
+-        !(BMCWEB_VM_WEBSOCKET && BMCWEB_VM_NBDPROXY),
+-        "nbd proxy cannot be turned on at the same time as vm websocket.");
++    // static_assert(
++    //     !(BMCWEB_VM_WEBSOCKET && BMCWEB_VM_NBDPROXY),
++    //     "nbd proxy cannot be turned on at the same time as vm websocket.");
+
+     if constexpr (BMCWEB_VM_NBDPROXY)
+     {
+@@ -537,13 +537,6 @@ inline void requestRoutes(App& app)
+             .onopen(nbd_proxy::onOpen)
+             .onclose(nbd_proxy::onClose)
+             .onmessageex(nbd_proxy::onMessage);
+-
+-        BMCWEB_ROUTE(app, "/vm/0/0")
+-            .privileges({{"ConfigureComponents", "ConfigureManager"}})
+-            .websocket()
+-            .onopen(nbd_proxy::onOpen)
+-            .onclose(nbd_proxy::onClose)
+-            .onmessageex(nbd_proxy::onMessage);
+     }
+     if constexpr (BMCWEB_VM_WEBSOCKET)
+     {
+diff --git a/meson.options b/meson.options
+index 4725e792..03a89c3c 100644
+--- a/meson.options
++++ b/meson.options
+@@ -32,12 +32,12 @@ option(
+ # this interface, so for the moment this appears to be dead code;  In leiu of
+ # removing it, it has been disabled to try to give those that use it the
+ # opportunity to upstream their backend implementation
+-#option(
+-#    'vm-nbdproxy',
+-#    type: 'feature',
+-#    value: 'disabled',
+-#    description: 'Enable the Virtual Media WebSocket.'
+-#)
++option(
++   'vm-nbdproxy',
++   type: 'feature',
++   value: 'enabled',
++   description: 'Enable the Virtual Media WebSocket.'
++)
+
+ # BMCWEB_REST
+ option(
+--
+2.25.1
+
