@@ -1,0 +1,105 @@
+From 314c9371265a72076ab5d00b24bb8b8e674ca1a8 Mon Sep 17 00:00:00 2001
+From: Chau Ly <chaul@amperecomputing.com>
+Date: Wed, 24 Jan 2024 10:10:50 +0700
+Subject: [PATCH 05/12] Support remove user's web session
+
+Match the "PropertiesChanged" signal for monitoring the user status and
+delete the user session when:
+- User is disabled
+- User's privilege is changed
+
+Upstream-Status: Pending
+
+Signed-off-by: Chau Ly <chaul@amperecomputing.com>
+---
+ include/user_monitor.hpp | 52 ++++++++++++++++++++++++++++++++++++++++
+ src/webserver_run.cpp    |  1 +
+ 2 files changed, 53 insertions(+)
+
+diff --git a/include/user_monitor.hpp b/include/user_monitor.hpp
+index 70c4a1e9..beae12b6 100644
+--- a/include/user_monitor.hpp
++++ b/include/user_monitor.hpp
+@@ -10,6 +10,15 @@
+ 
+ #include <string>
+ 
++using DbusUserPropVariant =
++    std::variant<std::vector<std::string>, std::string, bool>;
++using DbusUserObjProperties =
++    std::vector<std::pair<std::string, DbusUserPropVariant>>;
++
++// User interface properties
++static constexpr const char* userPrivProperty = "UserPrivilege";
++static constexpr const char* userEnabledProperty = "UserEnabled";
++
+ namespace bmcweb
+ {
+ 
+@@ -22,6 +31,37 @@ inline void onUserRemoved(sdbusplus::message_t& msg)
+         username);
+ }
+ 
++inline void getUserNameFromPath(const std::string& path, std::string& userName)
++{
++    sdbusplus::message::object_path objPath(path);
++    userName.assign(objPath.filename());
++}
++
++inline void onPropertiesChanged(sdbusplus::message_t& msg)
++{
++    std::string userName;
++    std::string intfName;
++    DbusUserObjProperties chProperties;
++    getUserNameFromPath(msg.get_path(), userName);
++    msg.read(intfName, chProperties); // skip reading 3rd argument.
++    for (const auto& prop : chProperties)
++    {
++        std::string member = prop.first;
++        /* Remove session when user's privilege changes or user is disabled */
++        if ((member == userPrivProperty) || (member == userEnabledProperty))
++        {
++            /* Do not remove session when user is enabled */
++            if ((member == userEnabledProperty) &&
++                (std::get<bool>(prop.second) == true))
++            {
++                return;
++            }
++            persistent_data::SessionStore::getInstance()
++                .removeSessionsByUsername(userName);
++        }
++    }
++}
++
+ inline void registerUserRemovedSignal()
+ {
+     std::string userRemovedMatchStr =
+@@ -31,4 +71,16 @@ inline void registerUserRemovedSignal()
+     static sdbusplus::bus::match_t userRemovedMatch(
+         *crow::connections::systemBus, userRemovedMatchStr, onUserRemoved);
+ }
++
++inline void registerUserPropertiesSignal()
++{
++    std::string userPropertiesSignal =
++        "type='signal',member='PropertiesChanged',"
++        "interface='org.freedesktop.DBus.Properties',"
++        "arg0='xyz.openbmc_project.User.Attributes'";
++
++    static sdbusplus::bus::match_t userPropertiesChanged(
++        *crow::connections::systemBus, userPropertiesSignal,
++        onPropertiesChanged);
++}
+ } // namespace bmcweb
+diff --git a/src/webserver_run.cpp b/src/webserver_run.cpp
+index 12c82fe4..03d9389b 100644
+--- a/src/webserver_run.cpp
++++ b/src/webserver_run.cpp
+@@ -126,6 +126,7 @@ int run()
+     }
+ 
+     bmcweb::registerUserRemovedSignal();
++    bmcweb::registerUserPropertiesSignal();
+ 
+     bmcweb::ServiceWatchdog watchdog;
+ 

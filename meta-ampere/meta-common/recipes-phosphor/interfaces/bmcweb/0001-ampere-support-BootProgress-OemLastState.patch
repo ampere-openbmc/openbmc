@@ -1,0 +1,99 @@
+From 1d6da2c693fc50f66adaeb8323bbef6f08051225 Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Fri, 12 May 2023 10:22:29 +0700
+Subject: [PATCH 01/12] ampere: support BootProgress OemLastState
+
+Support setting BootProgress OemLastState from the latest PostCodes entry.
+This commit also supports to set LastState to Oem when dbus ProgressStages is Oem.
+
+Gerrit: https://gerrit.openbmc.org/c/openbmc/bmcweb/+/58923
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+Change-Id: Ifbf32354d38bd68859b75b95040c6f09cd962cdc
+---
+ redfish-core/lib/systems.hpp | 56 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 56 insertions(+)
+
+diff --git a/redfish-core/lib/systems.hpp b/redfish-core/lib/systems.hpp
+index 45400dd4..9baedcb0 100644
+--- a/redfish-core/lib/systems.hpp
++++ b/redfish-core/lib/systems.hpp
+@@ -756,6 +756,12 @@ inline std::string dbusToRfBootProgress(const std::string& dbusBootProgress)
+     {
+         rfBpLastState = "OSRunning";
+     }
++    else if (dbusBootProgress ==
++             "xyz.openbmc_project.State.Boot.Progress.ProgressStages."
++             "OEM")
++    {
++        rfBpLastState = "OEM";
++    }
+     else
+     {
+         BMCWEB_LOG_DEBUG("Unsupported D-Bus BootProgress {}", dbusBootProgress);
+@@ -850,6 +856,55 @@ inline void getBootProgress(const std::shared_ptr<bmcweb::AsyncResp>& asyncResp)
+         });
+ }
+ 
++/**
++ * @brief Retrieves boot progress OemLastState of the system
++ *
++ * @param[in] aResp  Shared pointer for generating response message.
++ *
++ * @return None.
++ */
++inline void
++    getBootProgressOemLastState(const std::shared_ptr<bmcweb::AsyncResp>& aResp)
++{
++    crow::connections::systemBus->async_method_call(
++        [aResp](const boost::system::error_code ec,
++                const std::variant<std::tuple<std::vector<uint8_t>, std::vector<uint8_t>>>&
++                    code) {
++        if (ec)
++        {
++            return;
++        }
++
++        /* The OemLastState updated to the PostCodes Boot.Raw:
++         * https://gerrit.openbmc.org/c/openbmc/phosphor-dbus-interfaces/+/74633
++         * The type of the Boot.Raw value is struct[array[byte],array[byte]]
++         */
++        const std::tuple<std::vector<uint8_t>, std::vector<uint8_t>>*
++            codePtr =
++                std::get_if<std::tuple<std::vector<uint8_t>, std::vector<uint8_t>>>(&code);
++        if (codePtr == nullptr)
++        {
++            messages::internalError(aResp->res);
++            return;
++        }
++        std::string codeStr = bytesToHexString(std::get<0>(*codePtr));
++        /* Set "OemLastState": to "" if there is no boot progress code */
++        if (codeStr.empty())
++        {
++            codeStr = "";
++        }
++        else
++        {
++            codeStr = "0x" + codeStr;
++        }
++        aResp->res.jsonValue["BootProgress"]["OemLastState"] = codeStr;
++    },
++        "xyz.openbmc_project.State.Boot.Raw",
++        "/xyz/openbmc_project/state/boot/raw0",
++        "org.freedesktop.DBus.Properties", "Get",
++        "xyz.openbmc_project.State.Boot.Raw", "Value");
++}
++
+ /**
+  * @brief Retrieves boot progress Last Update of the system
+  *
+@@ -3128,6 +3183,7 @@ inline void handleComputerSystemGet(
+     getHostState(asyncResp);
+     getBootProperties(asyncResp);
+     getBootProgress(asyncResp);
++    getBootProgressOemLastState(asyncResp);
+     getBootProgressLastStateTime(asyncResp);
+     pcie_util::getPCIeDeviceList(asyncResp,
+                                  nlohmann::json::json_pointer("/PCIeDevices"));
