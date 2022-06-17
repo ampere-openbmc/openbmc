@@ -1,0 +1,288 @@
+From bb0aaeaa0468edea5cf47b80de67b87eecf31ad8 Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Wed, 6 Dec 2023 14:43:03 +0700
+Subject: [PATCH 02/12] Support Redfish Hostinterface schema
+
+Support the HostInterface schema as defined in the DSP0268_2021.2
+Redfish Schema Supplement.pdf and satisfy requirements specified at
+section B.1.5.2 in the DEN0069D_SBMR_2.0.pdf document.
+This commit also adds the CredentialBootstrappingRole property inside
+the HostInterface schema. This property shall contain a link to a
+resource of type Role, and should link to the resource identified by the
+RoleId property within CredentialBootstrapping.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ redfish-core/lib/host_interface.hpp | 193 ++++++++++++++++++++++++++++
+ redfish-core/lib/managers.hpp       |   3 +
+ redfish-core/lib/roles.hpp          |   9 ++
+ redfish-core/src/redfish.cpp        |   3 +
+ 4 files changed, 208 insertions(+)
+ create mode 100644 redfish-core/lib/host_interface.hpp
+
+diff --git a/redfish-core/lib/host_interface.hpp b/redfish-core/lib/host_interface.hpp
+new file mode 100644
+index 00000000..005e8cfc
+--- /dev/null
++++ b/redfish-core/lib/host_interface.hpp
+@@ -0,0 +1,193 @@
++/*
++// Copyright (c) 2022 Ampere Computing
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//      http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++*/
++#pragma once
++
++#include "app.hpp"
++#include "query.hpp"
++#include "registries/privilege_registry.hpp"
++#include "utils/chassis_utils.hpp"
++#include "utils/json_utils.hpp"
++
++namespace redfish
++{
++
++inline void handleHostInterfacePatch(
++    App& app, const crow::Request& req,
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp)
++{
++    if (!redfish::setUpRedfishRoute(app, req, asyncResp))
++    {
++        return;
++    }
++    std::optional<bool> enabled;
++    std::optional<bool> enableAfterReset;
++
++    if (!json_util::readJsonPatch(
++            req, asyncResp->res, "CredentialBootstrapping/Enabled", enabled,
++            "CredentialBootstrapping/EnableAfterReset", enableAfterReset))
++    {
++        return;
++    }
++
++    if (enabled)
++    {
++        crow::connections::systemBus->async_method_call(
++            [asyncResp](const boost::system::error_code ec) {
++                if (ec)
++                {
++                    messages::internalError(asyncResp->res);
++                    return;
++                }
++                messages::success(asyncResp->res);
++            },
++            "xyz.openbmc_project.User.Manager",
++            "/xyz/openbmc_project/user/root", "org.freedesktop.DBus.Properties",
++            "Set", "xyz.openbmc_project.HostInterface.CredentialBootstrapping",
++            "Enabled", dbus::utility::DbusVariantType(*enabled));
++    }
++
++    if (enableAfterReset)
++    {
++        crow::connections::systemBus->async_method_call(
++            [asyncResp](const boost::system::error_code ec) {
++                if (ec)
++                {
++                    messages::internalError(asyncResp->res);
++                    return;
++                }
++                messages::success(asyncResp->res);
++            },
++            "xyz.openbmc_project.User.Manager",
++            "/xyz/openbmc_project/user/root", "org.freedesktop.DBus.Properties",
++            "Set", "xyz.openbmc_project.HostInterface.CredentialBootstrapping",
++            "EnableAfterReset",
++            dbus::utility::DbusVariantType(*enableAfterReset));
++    }
++}
++
++inline void requestRoutesHostInterfaceCollection(App& app)
++{
++    BMCWEB_ROUTE(app, "/redfish/v1/Managers/bmc/HostInterfaces/")
++        .privileges(redfish::privileges::getHostInterfaceCollection)
++        .methods(
++            boost::beast::http::verb::
++                get)([&app](
++                         const crow::Request& req,
++                         const std::shared_ptr<bmcweb::AsyncResp>& asyncResp) {
++            if (!redfish::setUpRedfishRoute(app, req, asyncResp))
++            {
++                return;
++            }
++
++            asyncResp->res.jsonValue["@odata.context"] =
++                "/redfish/v1/$metadata#HostInterfaceCollection.HostInterfaceCollection";
++            asyncResp->res.jsonValue["@odata.id"] =
++                "/redfish/v1/Managers/bmc/HostInterfaces";
++            asyncResp->res.jsonValue["@odata.type"] =
++                "#HostInterfaceCollection.HostInterfaceCollection";
++            asyncResp->res.jsonValue["Name"] = "HostInterface Collection";
++            asyncResp->res.jsonValue["Description"] =
++                "Collection of HostInterfaces";
++            nlohmann::json& memberArray = asyncResp->res.jsonValue["Members"];
++            memberArray = nlohmann::json::array();
++            nlohmann::json::object_t member;
++            member["@odata.id"] = boost::urls::format(
++                "/redfish/v1/Managers/bmc/HostInterfaces/bmc");
++            memberArray.emplace_back(std::move(member));
++            asyncResp->res.jsonValue["Members@odata.count"] =
++                memberArray.size();
++        });
++}
++
++inline void requestRoutesHostInterface(App& app)
++{
++    BMCWEB_ROUTE(app, "/redfish/v1/Managers/bmc/HostInterfaces/bmc/")
++        .privileges(redfish::privileges::getHostInterface)
++        .methods(
++            boost::beast::http::verb::
++                get)([&app](
++                         const crow::Request& req,
++                         const std::shared_ptr<bmcweb::AsyncResp>& asyncResp) {
++            BMCWEB_LOG_DEBUG("requestRoutesHostInterface");
++            if (!redfish::setUpRedfishRoute(app, req, asyncResp))
++            {
++                return;
++            }
++
++            asyncResp->res.jsonValue["@odata.context"] =
++                "/redfish/v1/$metadata#HostInterface.HostInterface";
++            asyncResp->res.jsonValue["@odata.id"] =
++                "/redfish/v1/Managers/bmc/HostInterfaces";
++            asyncResp->res.jsonValue["@odata.type"] =
++                "#HostInterface.v1_3_0.HostInterface";
++            asyncResp->res.jsonValue["Description"] = "Host Interface";
++            asyncResp->res.jsonValue["Name"] = "Host Interface";
++            asyncResp->res.jsonValue["Id"] = "bmc";
++            asyncResp->res.jsonValue["ExternallyAccessible"] = false;
++            asyncResp->res.jsonValue["HostInterfaceType"] =
++                "NetworkHostInterface";
++            asyncResp->res.jsonValue["Status"]["State"] = "Enabled";
++            asyncResp->res.jsonValue["Status"]["Health"] = "OK";
++
++            asyncResp->res.jsonValue["Links"]["CredentialBootstrappingRole"]
++                                    ["@odata.id"] =
++                "/redfish/v1/AccountService/Roles/HostInterfaceAdministrator";
++
++            sdbusplus::asio::getProperty<bool>(
++                *crow::connections::systemBus,
++                "xyz.openbmc_project.User.Manager",
++                "/xyz/openbmc_project/user/root",
++                "xyz.openbmc_project.HostInterface.CredentialBootstrapping",
++                "EnableAfterReset",
++                [asyncResp](const boost::system::error_code ec,
++                            const bool enableAfterReset) {
++                    if (ec)
++                    {
++                        return;
++                    }
++
++                    asyncResp->res.jsonValue["CredentialBootstrapping"]
++                                            ["EnableAfterReset"] =
++                        enableAfterReset;
++                });
++            sdbusplus::asio::getProperty<bool>(
++                *crow::connections::systemBus,
++                "xyz.openbmc_project.User.Manager",
++                "/xyz/openbmc_project/user/root",
++                "xyz.openbmc_project.HostInterface.CredentialBootstrapping",
++                "Enabled",
++                [asyncResp](const boost::system::error_code ec,
++                            const bool enabled) {
++                    if (ec)
++                    {
++                        return;
++                    }
++
++                    asyncResp->res
++                        .jsonValue["CredentialBootstrapping"]["Enabled"] =
++                        enabled;
++                });
++            asyncResp->res.jsonValue["CredentialBootstrapping"]["RoleId"] =
++                "HostInterfaceAdministrator";
++        });
++
++    BMCWEB_ROUTE(app, "/redfish/v1/Managers/bmc/HostInterfaces/bmc/")
++        .privileges(redfish::privileges::patchHostInterface)
++        .methods(boost::beast::http::verb::patch)(
++            std::bind_front(handleHostInterfacePatch, std::ref(app)));
++}
++
++} // namespace redfish
+diff --git a/redfish-core/lib/managers.hpp b/redfish-core/lib/managers.hpp
+index e5a89f01..25bebd11 100644
+--- a/redfish-core/lib/managers.hpp
++++ b/redfish-core/lib/managers.hpp
+@@ -633,6 +633,9 @@ inline void requestRoutesManager(App& app)
+                 boost::urls::format(
+                     "/redfish/v1/Managers/{}/EthernetInterfaces",
+                     BMCWEB_REDFISH_MANAGER_URI_NAME);
++            asyncResp->res.jsonValue["HostInterfaces"]["@odata.id"] =
++                boost::urls::format("/redfish/v1/Managers/{}/HostInterfaces",
++                                    BMCWEB_REDFISH_MANAGER_URI_NAME);
+ 
+             if constexpr (BMCWEB_VM_NBDPROXY)
+             {
+diff --git a/redfish-core/lib/roles.hpp b/redfish-core/lib/roles.hpp
+index c1a0c58b..5ec2bba4 100644
+--- a/redfish-core/lib/roles.hpp
++++ b/redfish-core/lib/roles.hpp
+@@ -30,6 +30,10 @@ inline std::string getRoleFromPrivileges(std::string_view priv)
+     {
+         return "Administrator";
+     }
++    if (priv == "priv-hostinterfaceadmin")
++    {
++        return "HostInterfaceAdministrator";
++    }
+     if (priv == "priv-user")
+     {
+         return "ReadOnly";
+@@ -53,6 +57,11 @@ inline std::optional<nlohmann::json::array_t> getAssignedPrivFromRole(
+         privArray.emplace_back("ConfigureSelf");
+         privArray.emplace_back("ConfigureComponents");
+     }
++    else if (role == "HostInterfaceAdministrator")
++    {
++        privArray = {"Login", "ConfigureManager", "ConfigureUsers",
++                     "ConfigureSelf", "ConfigureComponents"};
++    }
+     else if (role == "Operator")
+     {
+         privArray.emplace_back("Login");
+diff --git a/redfish-core/src/redfish.cpp b/redfish-core/src/redfish.cpp
+index eb857af7..5c9d9c3c 100644
+--- a/redfish-core/src/redfish.cpp
++++ b/redfish-core/src/redfish.cpp
+@@ -17,6 +17,7 @@
+ #include "eventservice_sse.hpp"
+ #include "fabric_adapters.hpp"
+ #include "fan.hpp"
++#include "host_interface.hpp"
+ #include "hypervisor_system.hpp"
+ #include "log_services.hpp"
+ #include "manager_diagnostic_data.hpp"
+@@ -73,6 +74,8 @@ RedfishService::RedfishService(App& app)
+     requestRoutesNetworkProtocol(app);
+     requestRoutesSession(app);
+     requestEthernetInterfacesRoutes(app);
++    requestRoutesHostInterface(app);
++    requestRoutesHostInterfaceCollection(app);
+     if constexpr (BMCWEB_REDFISH_ALLOW_DEPRECATED_POWER_THERMAL)
+     {
+         requestRoutesThermal(app);
+-- 
+2.43.0
+

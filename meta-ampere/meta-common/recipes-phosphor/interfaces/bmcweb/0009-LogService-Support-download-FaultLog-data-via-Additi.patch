@@ -1,0 +1,306 @@
+From bc357444e240dd425e07d6adff0aa1da9e9c4a3c Mon Sep 17 00:00:00 2001
+From: Dung Cao <dung@os.amperecomputing.com>
+Date: Thu, 22 Aug 2024 12:11:55 +0700
+Subject: [PATCH 09/12] LogService: Support download FaultLog data via
+ AdditionalDataURI
+
+Add function to download FaultLog data: CPER, CrashDump
+
+Example CPER entry log:
+{
+  "@odata.id": "/redfish/v1/Managers/bmc/LogServices/FaultLog/Entries/5",
+  "@odata.type": "#LogEntry.v1_9_0.LogEntry",
+  "AdditionalDataURI": "/redfish/v1/Managers/bmc/LogServices/FaultLog/Entries/5/attachment",
+  "Created": "2023-03-01T09:05:15.417923+00:00",
+  "DiagnosticDataType": "CPER",
+  "EntryType": "Event",
+  "Id": "5",
+  "Name": "FaultLog Dump Entry"
+},
+
+Crashdump entry log:
+{
+  "@odata.id": "/redfish/v1/Managers/bmc/LogServices/FaultLog/Entries/4",
+  "@odata.type": "#LogEntry.v1_9_0.LogEntry",
+  "AdditionalDataURI": "/redfish/v1/Managers/bmc/LogServices/FaultLog/Entries/4/attachment",
+  "Created": "2023-03-01T08:53:16.159503+00:00",
+  "DiagnosticDataType": "OEM",
+  "EntryType": "Event",
+  "Id": "4",
+  "Name": "FaultLog Dump Entry",
+  "OEMDiagnosticDataType": "Crashdump"
+},
+
+Download the FaultLog data via AdditionalDataURI:
+curl -k -H "X-Auth-Token: $token" -X GET  \
+/redfish/v1/Managers/bmc/LogServices/FaultLog/Entries/5/attachment \
+--output data.dump
+
+Upstream-Status: Pending
+
+Signed-off-by: Dung Cao <dung@os.amperecomputing.com>
+---
+ redfish-core/lib/log_services.hpp | 172 +++++++++++++++++++++++++-----
+ redfish-core/src/redfish.cpp      |   1 +
+ 2 files changed, 147 insertions(+), 26 deletions(-)
+
+diff --git a/redfish-core/lib/log_services.hpp b/redfish-core/lib/log_services.hpp
+index acd75e98..7e2dfe1c 100644
+--- a/redfish-core/lib/log_services.hpp
++++ b/redfish-core/lib/log_services.hpp
+@@ -226,6 +226,7 @@ inline void parseDumpEntryFromDbusObject(
+     std::string& dumpStatus, uint64_t& size, uint64_t& timestampUs,
+     std::string& originatorId, log_entry::OriginatorTypes& originatorType,
+     std::string& entryType, std::string& primaryLogId,
++    std::string& additionalType,
+     const std::shared_ptr<bmcweb::AsyncResp>& asyncResp)
+ {
+     for (const auto& interfaceMap : object.second)
+@@ -356,6 +357,17 @@ inline void parseDumpEntryFromDbusObject(
+                     }
+                     primaryLogId = *primaryLogIdPtr;
+                 }
++                else if (propertyMap.first == "AdditionalTypeName")
++                {
++                    const std::string* additionalTypePtr =
++                        std::get_if<std::string>(&propertyMap.second);
++                    if (additionalTypePtr == nullptr)
++                    {
++                        messages::internalError(asyncResp->res);
++                        break;
++                    }
++                    additionalType = *additionalTypePtr;
++                }
+             }
+         }
+     }
+@@ -454,6 +466,7 @@ inline void getDumpEntryCollection(
+                     log_entry::OriginatorTypes::Internal;
+                 std::string primaryLogId;
+                 std::string entryType;
++                std::string additionalType;
+                 nlohmann::json::object_t thisEntry;
+ 
+                 std::string entryID = object.first.filename();
+@@ -464,7 +477,8 @@ inline void getDumpEntryCollection(
+ 
+                 parseDumpEntryFromDbusObject(
+                     object, dumpStatus, size, timestampUs, originatorId,
+-                    originatorType, entryType, primaryLogId, asyncResp);
++                    originatorType, entryType, primaryLogId, additionalType,
++                    asyncResp);
+ 
+                 if (dumpStatus !=
+                         "xyz.openbmc_project.Common.Progress.OperationStatus.Completed" &&
+@@ -505,23 +519,26 @@ inline void getDumpEntryCollection(
+                 }
+                 else if (dumpType == "FaultLog")
+                 {
+-                    thisEntry["DiagnosticDataType"] = "OEM";
+-                    thisEntry["OEMDiagnosticDataType"] = "OpenBMC Fault Log";
+-                    thisEntry["EntryType"] = "Oem";
+-
+                     if (entryType == "CPER")
+                     {
+-                        thisEntry["AdditionalDataURI"] =
+-                            "/redfish/v1/Systems/system/LogServices/" +
+-                            primaryLogId;
+-                        thisEntry["OemRecordFormat"] = "CPER";
++                        thisEntry["DiagnosticDataType"] = "CPER";
+                     }
+                     else if (entryType == "Crashdump")
++                    {
++                        thisEntry["DiagnosticDataType"] = "OEM";
++                        if (!additionalType.empty())
++                        {
++                            thisEntry["OEMDiagnosticDataType"] = additionalType;
++                        }
++                        else
++                        {
++                            thisEntry["OEMDiagnosticDataType"] = "Crashdump";
++                        }
++                    }
++                    if (std::filesystem::exists(primaryLogId))
+                     {
+                         thisEntry["AdditionalDataURI"] =
+-                            "/redfish/v1/Systems/system/LogServices/Crashdump/Entries/" +
+-                            primaryLogId;
+-                        thisEntry["OemRecordFormat"] = "Crashdump";
++                            entriesPath + entryID + "/attachment";
+                     }
+                 }
+                 entriesArray.emplace_back(std::move(thisEntry));
+@@ -575,10 +592,13 @@ inline void getDumpEntryById(
+                     log_entry::OriginatorTypes::Internal;
+                 std::string primaryLogId;
+                 std::string entryType;
++                std::string additionalType;
++                std::string faultlogPath;
+ 
+                 parseDumpEntryFromDbusObject(
+                     objectPath, dumpStatus, size, timestampUs, originatorId,
+-                    originatorType, entryType, primaryLogId, asyncResp);
++                    originatorType, entryType, primaryLogId, additionalType,
++                    asyncResp);
+ 
+                 if (dumpStatus !=
+                         "xyz.openbmc_project.Common.Progress.OperationStatus.Completed" &&
+@@ -624,25 +644,28 @@ inline void getDumpEntryById(
+                 }
+                 else if (dumpType == "FaultLog")
+                 {
+-                    asyncResp->res.jsonValue["DiagnosticDataType"] = "OEM";
+-                    asyncResp->res.jsonValue["OEMDiagnosticDataType"] =
+-                        "OpenBMC Fault Log";
+-                    asyncResp->res.jsonValue["EntryType"] = "Oem";
+-
+                     if (entryType == "CPER")
+                     {
+-                        asyncResp->res.jsonValue["AdditionalDataURI"] =
+-                            "/redfish/v1/Systems/system/LogServices/" +
+-                            primaryLogId;
+-                        asyncResp->res.jsonValue["OemRecordFormat"] = "CPER";
++                        asyncResp->res.jsonValue["DiagnosticDataType"] = "CPER";
+                     }
+                     else if (entryType == "Crashdump")
++                    {
++                        asyncResp->res.jsonValue["DiagnosticDataType"] = "OEM";
++                        if (!additionalType.empty())
++                        {
++                            asyncResp->res.jsonValue["OEMDiagnosticDataType"] =
++                                additionalType;
++                        }
++                        else
++                        {
++                            asyncResp->res.jsonValue["OEMDiagnosticDataType"] =
++                                "Crashdump";
++                        }
++                    }
++                    if (std::filesystem::exists(primaryLogId))
+                     {
+                         asyncResp->res.jsonValue["AdditionalDataURI"] =
+-                            "/redfish/v1/Systems/system/LogServices/Crashdump/Entries/" +
+-                            primaryLogId;
+-                        asyncResp->res.jsonValue["OemRecordFormat"] =
+-                            "Crashdump";
++                            entriesPath + entryID + "/attachment";
+                     }
+                 }
+             }
+@@ -3268,4 +3291,101 @@ inline void requestRoutesDBusLogServiceActionsClear(App& app)
+             });
+ }
+ 
++inline void requestRoutesFaultLogDownload(App& app)
++{
++    // Note: Deviated from redfish privilege registry for GET & HEAD
++    // method for security reasons.
++    BMCWEB_ROUTE(
++        app,
++        "/redfish/v1/Managers/bmc/LogServices/FaultLog/Entries/<str>/attachment")
++        .privileges(redfish::privileges::getLogEntry)
++        .methods(boost::beast::http::verb::get)(
++            [&app](const crow::Request& req,
++                   const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++                   const std::string& entryID) {
++                if (!redfish::setUpRedfishRoute(app, req, asyncResp))
++                {
++                    return;
++                }
++                std::string dumpType = "FaultLog";
++                std::string entriesPath = getDumpEntriesPath(dumpType);
++                if (entriesPath.empty())
++                {
++                    messages::internalError(asyncResp->res);
++                    return;
++                }
++                crow::connections::systemBus->async_method_call(
++                    [asyncResp, entryID, dumpType, entriesPath](
++                        const boost::system::error_code ec,
++                        const dbus::utility::ManagedObjectType& resp) {
++                        if (ec)
++                        {
++                            BMCWEB_LOG_ERROR(
++                                "DumpEntry resp_handler got error {}", ec);
++                            messages::internalError(asyncResp->res);
++                            return;
++                        }
++
++                        bool foundDumpEntry = false;
++                        std::string dumpEntryPath =
++                            getDumpPath(dumpType) + "/entry/";
++
++                        for (const auto& objectPath : resp)
++                        {
++                            if (objectPath.first.str != dumpEntryPath + entryID)
++                            {
++                                continue;
++                            }
++
++                            foundDumpEntry = true;
++                            uint64_t timestampUs = 0;
++                            uint64_t size = 0;
++                            std::string dumpStatus;
++                            std::string primaryLogId;
++                            std::string entryType;
++                            std::string additionalType;
++                            std::string originatorId;
++                            log_entry::OriginatorTypes originatorType =
++                                log_entry::OriginatorTypes::Internal;
++
++                            parseDumpEntryFromDbusObject(
++                                objectPath, dumpStatus, size, timestampUs,
++                                originatorId, originatorType, entryType,
++                                primaryLogId, additionalType, asyncResp);
++
++                            std::ifstream inStream(primaryLogId.c_str(),
++                                                   std::ifstream::in |
++                                                       std::ifstream::binary);
++                            if (!inStream)
++                            {
++                                BMCWEB_LOG_ERROR(
++                                    "The FaultLog Dir is not exist: {}",
++                                    primaryLogId.c_str());
++                                messages::internalError(asyncResp->res);
++                                return;
++                            }
++                            // get length of file:
++                            inStream.seekg(0, inStream.end);
++                            std::streamsize length =
++                                static_cast<std::streamsize>(inStream.tellg());
++                            inStream.seekg(0, inStream.beg);
++                            std::vector<char> data(static_cast<size_t>(length),
++                                                   0);
++                            inStream.read(reinterpret_cast<char*>(data.data()),
++                                          length);
++                            std::string output(data.data(), data.size());
++                            asyncResp->res.write(std::move(output));
++                        }
++                        if (!foundDumpEntry)
++                        {
++                            BMCWEB_LOG_WARNING("Can't find Dump Entry");
++                            messages::internalError(asyncResp->res);
++                            return;
++                        }
++                    },
++                    "xyz.openbmc_project.Dump.Manager",
++                    "/xyz/openbmc_project/dump",
++                    "org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
++            });
++}
+ } // namespace redfish
+diff --git a/redfish-core/src/redfish.cpp b/redfish-core/src/redfish.cpp
+index 5c9d9c3c..d14a7efc 100644
+--- a/redfish-core/src/redfish.cpp
++++ b/redfish-core/src/redfish.cpp
+@@ -137,6 +137,7 @@ RedfishService::RedfishService(App& app)
+         requestRoutesFaultLogDumpEntryCollection(app);
+         requestRoutesFaultLogDumpEntry(app);
+         requestRoutesFaultLogDumpClear(app);
++        requestRoutesFaultLogDownload(app);
+     }
+ 
+     requestRoutesBMCLogServiceCollection(app);
+-- 
+2.43.0
+
