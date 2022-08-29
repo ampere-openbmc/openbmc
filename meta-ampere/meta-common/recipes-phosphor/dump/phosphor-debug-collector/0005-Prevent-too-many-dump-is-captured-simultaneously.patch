@@ -1,0 +1,58 @@
+From e69c692f274ae749230500bc9bb3a05e14423b11 Mon Sep 17 00:00:00 2001
+From: Dung Cao <dung@os.amperecomputing.com>
+Date: Tue, 20 Aug 2024 16:39:07 +0700
+Subject: [PATCH 5/5] Prevent too many dump is captured simultaneously
+
+Not only prevent too many dump is captured simultaneously for
+dumpType=UserRequested but also need to prevent for all of dump types.
+
+Upstream-Status: Pending
+
+Signed-off-by: Dung Cao <dung@os.amperecomputing.com>
+---
+ dump_manager_bmc.cpp | 15 +++++----------
+ 1 file changed, 5 insertions(+), 10 deletions(-)
+
+diff --git a/dump_manager_bmc.cpp b/dump_manager_bmc.cpp
+index 6f19a67..3c19613 100644
+--- a/dump_manager_bmc.cpp
++++ b/dump_manager_bmc.cpp
+@@ -63,7 +63,7 @@ sdbusplus::message::object_path Manager::createDump(
+     std::string path = extractParameter<std::string>(
+         convertCreateParametersToString(CreateParameters::FilePath), params);
+ 
+-    if ((Manager::fUserDumpInProgress == true) && (dumpType == DumpTypes::USER))
++    if (Manager::fUserDumpInProgress == true)
+     {
+         lg2::info("Another user initiated dump in progress");
+         elog<sdbusplus::xyz::openbmc_project::Common::Error::Unavailable>();
+@@ -99,10 +99,8 @@ sdbusplus::message::object_path Manager::createDump(
+         elog<InternalFailure>();
+     }
+ 
+-    if (dumpType == DumpTypes::USER)
+-    {
+-        Manager::fUserDumpInProgress = true;
+-    }
++    Manager::fUserDumpInProgress = true;
++
+     return objPath.string();
+ }
+ 
+@@ -134,11 +132,8 @@ uint32_t Manager::captureDump(DumpTypes type, const std::string& path)
+     else if (pid > 0)
+     {
+         Child::Callback callback = [this, type, pid](Child&, const siginfo_t*) {
+-            if (type == DumpTypes::USER)
+-            {
+-                lg2::info("User initiated dump completed, resetting flag");
+-                Manager::fUserDumpInProgress = false;
+-            }
++            lg2::info("User initiated dump completed, resetting flag");
++            Manager::fUserDumpInProgress = false;
+             this->childPtrMap.erase(pid);
+         };
+         try
+-- 
+2.34.1
+

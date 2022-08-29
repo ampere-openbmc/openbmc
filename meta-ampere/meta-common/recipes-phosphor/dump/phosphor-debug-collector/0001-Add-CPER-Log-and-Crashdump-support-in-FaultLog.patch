@@ -1,0 +1,788 @@
+From 43c87ad2f23cecb9a37a1b865084fa821c7cdd2f Mon Sep 17 00:00:00 2001
+From: Claire Weinan <cweinan@google.com>
+Date: Tue, 20 Aug 2024 16:36:43 +0700
+Subject: [PATCH 1/5] Add CPER Log and Crashdump support in FaultLog
+
+The fault log manager receives D-Bus signals to be notified when new
+CPER logs and Crashdumps are available in BMC. When it receives the
+notification, it creates a corresponding fault log dump entry that
+includes the type and ID of the new log.
+
+The earliest fault log entry often contains the most relevant and
+detailed information that can help root-cause a fault. Therefore support
+is included for specially saving the first N entries of type T, where we
+currently support 2 entry types for T (CPER logs and crashdumps), and
+where N is configurable in meson_options.txt for each type. The
+intention is ensure that the earliest fault logs are saved, even if
+allocated space runs out, while still being able to receiving new
+entries (middle entries are subject to deletion).
+
+Note: in this patchset the fault log manager doesn't yet receive D-Bus
+signals indicating the deletion of CPER logs and crashdumps from BMC by
+the daemon they originate from. This functionality will be added later.
+
+Tested:
+Verified that CPER Log and crashdump D-Bus signals are received, and
+corresponding fault log entries are created.
+
+Example command for initiating crashdump:
+  busctl call com.intel.crashdump /com/intel/crashdump com.intel.crashdump.Stored GenerateStoredLog s IERR
+
+For CPER log testing, locally modified bios_bmc_smm_error_logger to
+be able to force CPER log creation and send D-Bus signal to fault log
+manager.
+
+Example commands for verifying dump entry creation and D-Bus property
+values:
+  busctl tree xyz.openbmc_project.Dump.Manager
+  busctl introspect xyz.openbmc_project.Dump.Manager /xyz/openbmc_project/dump/faultlog/entry/1
+
+Also tested log entry deletion.
+Example command:
+  busctl call xyz.openbmc_project.Dump.Manager /xyz/openbmc_project/dump/faultlog xyz.openbmc_project.Collection.DeleteAll DeleteAll
+
+Also tested invalid and missing createDump() parameters.
+Example command:
+  busctl call xyz.openbmc_project.Dump.Manager  /xyz/openbmc_project/dump/faultlog xyz.openbmc_project.Dump.Create CreateDump a{sv} 2 "Type" s "MyInvalidType" "PrimaryLogId" s "1"
+
+Upstream-Status: Pending
+
+Signed-off-by: Claire Weinan <cweinan@google.com>
+Change-Id: Ied5718ddbadb5117973ef92e3874e36570615d85
+---
+ dump_manager.hpp          |   6 +-
+ dump_manager_faultlog.cpp | 386 +++++++++++++++++++++++++++++++++++++-
+ dump_manager_faultlog.hpp |  63 +++++++
+ faultlog_dump_entry.cpp   |   2 +-
+ faultlog_dump_entry.hpp   |  41 +++-
+ meson.build               |  31 +++
+ meson.options             |  25 +++
+ 7 files changed, 534 insertions(+), 20 deletions(-)
+
+diff --git a/dump_manager.hpp b/dump_manager.hpp
+index 18f6ad8..46ec91e 100644
+--- a/dump_manager.hpp
++++ b/dump_manager.hpp
+@@ -59,11 +59,11 @@ class Manager : public Iface
+      */
+     void erase(uint32_t entryId);
+ 
+-    /** @brief  Erase all BMC dump entries and  Delete all Dump files
+-     * from Permanent location
++    /** @brief  Erase all dump entries and delete all dump files
++     * from permanent location
+      *
+      */
+-    void deleteAll() override;
++    virtual void deleteAll() override;
+ 
+     /** @brief sdbusplus DBus bus connection. */
+     sdbusplus::bus_t& bus;
+diff --git a/dump_manager_faultlog.cpp b/dump_manager_faultlog.cpp
+index c2573f1..d509fcf 100644
+--- a/dump_manager_faultlog.cpp
++++ b/dump_manager_faultlog.cpp
+@@ -29,6 +29,16 @@ using namespace sdbusplus::xyz::openbmc_project::Common::File::Error;
+ using ErrnoOpen = xyz::openbmc_project::Common::File::Open::ERRNO;
+ using PathOpen = xyz::openbmc_project::Common::File::Open::PATH;
+ 
++using InterfaceVariant = typename sdbusplus::utility::dedup_variant_t<
++    bool, uint8_t, uint16_t, int16_t, uint32_t, int32_t, uint64_t, int64_t,
++    size_t, ssize_t, double, std::string, sdbusplus::message::object_path>;
++
++using ChangedPropertiesType =
++    std::vector<std::pair<std::string, InterfaceVariant>>;
++
++using ChangedInterfacesType =
++    std::vector<std::pair<std::string, ChangedPropertiesType>>;
++
+ sdbusplus::message::object_path Manager::createDump(
+     phosphor::dump::DumpCreateParams params)
+ {
+@@ -46,6 +56,21 @@ sdbusplus::message::object_path Manager::createDump(
+         lg2::info("Got additional parameters");
+     }
+ 
++    FaultDataType entryType = FaultDataType::Crashdump;
++    std::string primaryLogIdStr;
++
++    getAndCheckCreateDumpParams(params, entryType, primaryLogIdStr);
++
++    // To stay within the limit of MAX_NUM_FAULT_LOG_ENTRIES we need to remove
++    // an entry from the fault log map to make room for creating a new entry
++    if (entries.size() == MAX_NUM_FAULT_LOG_ENTRIES)
++    {
++        // Save the earliest fault log entry to a saved entries map (if
++        // it qualifies to be saved), and remove it from the main fault
++        // log entries map.
++        saveEarliestEntry();
++    }
++
+     // Get the originator id and type from params
+     std::string originatorId;
+     originatorTypes originatorType;
+@@ -58,6 +83,10 @@ sdbusplus::message::object_path Manager::createDump(
+     auto idString = std::to_string(id);
+     auto objPath = std::filesystem::path(baseEntryPath) / idString;
+ 
++    lg2::info(
++        "next entry id: {ID}, entries.size(): {SIZE}",
++        "ID", id, "SIZE", entries.size());
++
+     std::filesystem::path faultLogFilePath(
+         std::string(FAULTLOG_DUMP_PATH) + idString);
+     std::ofstream faultLogFile;
+@@ -90,18 +119,14 @@ sdbusplus::message::object_path Manager::createDump(
+     {
+         lg2::info("dump_manager_faultlog.cpp: add faultlog entry");
+ 
+-        uint64_t timestamp =
+-            std::chrono::duration_cast<std::chrono::microseconds>(
+-                std::chrono::system_clock::now().time_since_epoch())
+-                .count();
+-
+         entries.insert(std::make_pair(
+             id,
+             std::make_unique<faultlog::Entry>(
+-                bus, objPath.c_str(), id, timestamp,
++                bus, objPath.c_str(), id, generateTimestamp(),
+                 std::filesystem::file_size(faultLogFilePath), faultLogFilePath,
+-                phosphor::dump::OperationStatus::Completed, originatorId,
+-                originatorType, *this)));
++                phosphor::dump::OperationStatus::Completed,
++                originatorId, originatorType, entryType,
++                primaryLogIdStr, *this, &entries)));
+     }
+     catch (const std::invalid_argument& e)
+     {
+@@ -117,6 +142,351 @@ sdbusplus::message::object_path Manager::createDump(
+     return objPath.string();
+ }
+ 
++void Manager::deleteAll()
++{
++    lg2::info("In dump_manager_faultlog.hpp deleteAll");
++
++    phosphor::dump::Manager::deleteAll();
++
++    auto iter = savedCperLogEntries.begin();
++    while (iter != savedCperLogEntries.end())
++    {
++        auto& entry = iter->second;
++        ++iter;
++        entry->delete_();
++    }
++
++    iter = savedCrashdumpEntries.begin();
++    while (iter != savedCrashdumpEntries.end())
++    {
++        auto& entry = iter->second;
++        ++iter;
++        entry->delete_();
++    }
++}
++
++void Manager::registerFaultLogMatches()
++{
++    lg2::info("dump_manager_faultlog registerFaultLogMatches");
++
++    registerCrashdumpMatch();
++    registerCperLogMatch();
++}
++
++void Manager::registerCrashdumpMatch()
++{
++    crashdumpMatch = std::make_unique<sdbusplus::bus::match_t>(
++        bus,
++        "type='signal',interface='org.freedesktop.DBus.Properties',member='"
++        "PropertiesChanged',path_namespace='/com/intel/crashdump'",
++
++        [this](sdbusplus::message_t& msg) {
++            if (msg.is_method_error())
++            {
++                lg2::error("dump_manager_faultlog got crashdump error!");
++                return;
++            }
++
++            lg2::info("Got new crashdump notification!");
++
++            std::string interface;
++            std::string objpath;
++            objpath = msg.get_path();
++
++            ChangedPropertiesType changedProps;
++            msg.read(interface, changedProps);
++
++            if (interface == "com.intel.crashdump")
++            {
++                lg2::info("interface is com.intel.crashdump");
++
++                for (const auto& [changedProp, newValue] : changedProps)
++                {
++                    if (changedProp == "Log")
++                    {
++                        const auto* val = std::get_if<std::string>(&newValue);
++                        if (val == nullptr)
++                        {
++                            lg2::error("Couldn't get Log property");
++                            return;
++                        }
++
++                        lg2::info("Log: {VAL}", "VAL", *val);
++
++                        std::map<std::string,
++                                 std::variant<std::string, uint64_t>>
++                            crashdumpMap;
++
++                        crashdumpMap.insert(std::pair<std::string, std::string>(
++                            "Type", "Crashdump"));
++
++                        crashdumpMap.insert(std::pair<std::string, std::string>(
++                            "PrimaryLogId",
++                            std::filesystem::path(objpath).filename()));
++
++                        createDump(crashdumpMap);
++                    }
++                }
++            }
++        });
++}
++
++void Manager::registerCperLogMatch()
++{
++    cperLogMatch = std::make_unique<sdbusplus::bus::match_t>(
++        bus,
++        "type='signal',path_namespace='/xyz/openbmc_project/external_storer/"
++        "bios_bmc_smm_error_logger/CPER',"
++        "interface='org.freedesktop.DBus.ObjectManager',member='"
++        "InterfacesAdded'",
++
++        [this](sdbusplus::message_t& msg) {
++            if (msg.is_method_error())
++            {
++                lg2::info(
++                    "dump_manager_faultlog got cperLogMatch error!");
++            }
++
++            lg2::info("Got new CPER Log notification!");
++
++            sdbusplus::message::object_path newObjPath;
++
++            ChangedPropertiesType changedProps;
++            ChangedInterfacesType changedInterfaces;
++            msg.read(newObjPath, changedInterfaces);
++
++            lg2::info(
++                "newObjPath: {PATH}", "PATH", newObjPath.str);
++
++            for (const auto& [changedInterface, changedProps] :
++                 changedInterfaces)
++            {
++                if (changedInterface == "xyz.openbmc_project.Common.FilePath")
++                {
++                    lg2::info("changedInterface is "
++                              "xyz.openbmc_project.Common.FilePath");
++
++                    for (const auto& [changedProp, newValue] : changedProps)
++                    {
++                        if (changedProp == "Path")
++                        {
++                            const auto* val =
++                                std::get_if<std::string>(&newValue);
++
++                            if (val == nullptr)
++                            {
++                                lg2::error("Couldn't get Path property");
++                                return;
++                            }
++
++                            lg2::info("Path: {PATH}", "PATH", *val);
++
++                            std::string cperLogPath(CPER_LOG_PATH);
++                            bool badPath = false;
++
++                            // Check path length
++                            if ((*val).size() <
++                                cperLogPath.size() + CPER_LOG_ID_STRING_LEN)
++                            {
++                                badPath = true;
++                                lg2::error("CPER_LOG_ID_STRING_LEN: {LEN}",
++                                            "LEN", CPER_LOG_ID_STRING_LEN);
++                            }
++                            // Check path prefix
++                            else if ((*val).compare(0, cperLogPath.size(),
++                                                    cperLogPath) != 0)
++                            {
++                                badPath = true;
++                            }
++
++                            if (badPath)
++                            {
++                                lg2::error("Unexpected CPER log path: {VAL}",
++                                           "VAL", *val);
++                            }
++                            else
++                            {
++                                std::string cperId = val->substr(
++                                    cperLogPath.size(), CPER_LOG_ID_STRING_LEN);
++                                std::map<std::string,
++                                         std::variant<std::string, uint64_t>>
++                                    cperLogMap;
++                                cperLogMap.insert(
++                                    std::pair<std::string, std::string>(
++                                        "Type", "CPER"));
++                                cperLogMap.insert(
++                                    std::pair<std::string, std::string>(
++                                        "PrimaryLogId", cperId));
++                                createDump(cperLogMap);
++                            }
++                        }
++                    }
++                }
++            }
++        });
++}
++
++void Manager::getAndCheckCreateDumpParams(
++    const phosphor::dump::DumpCreateParams& params, FaultDataType& entryType,
++    std::string& primaryLogIdStr)
++{
++    using InvalidArgument =
++        sdbusplus::xyz::openbmc_project::Common::Error::InvalidArgument;
++    using Argument = xyz::openbmc_project::Common::InvalidArgument;
++    std::string value;
++
++    auto iter = params.find("Type");
++    if (iter == params.end())
++    {
++        lg2::error("Required argument Type is missing");
++        elog<InvalidArgument>(Argument::ARGUMENT_NAME("TYPE"),
++                              Argument::ARGUMENT_VALUE("MISSING"));
++    }
++    else
++    {
++        try
++        {
++            value = std::get<std::string>(iter->second);
++        }
++        catch (const std::bad_variant_access& e)
++        {
++            // Exception will be raised if the input is not string
++            lg2::error("An invalid Type string is passed errormsg({TYPE})",
++                       "TYPE", e.what());
++            elog<InvalidArgument>(Argument::ARGUMENT_NAME("TYPE"),
++                                  Argument::ARGUMENT_VALUE("INVALID INPUT"));
++        }
++
++        if (value == "Crashdump")
++        {
++            entryType = FaultDataType::Crashdump;
++        }
++        else if (value == "CPER")
++        {
++            entryType = FaultDataType::CPER;
++        }
++        else
++        {
++            lg2::error("Unexpected entry type, not handled");
++            elog<InvalidArgument>(Argument::ARGUMENT_NAME("TYPE"),
++                                  Argument::ARGUMENT_VALUE("UNEXPECTED TYPE"));
++        }
++    }
++
++    iter = params.find("PrimaryLogId");
++    if (iter == params.end())
++    {
++        lg2::error("Required argument PrimaryLogId is missing");
++        elog<InvalidArgument>(Argument::ARGUMENT_NAME("PRIMARYLOGID"),
++                              Argument::ARGUMENT_VALUE("MISSING"));
++    }
++    else
++    {
++        try
++        {
++            value = std::get<std::string>(iter->second);
++        }
++        catch (const std::bad_variant_access& e)
++        {
++            // Exception will be raised if the input is not string
++            lg2::error(
++                "An invalid PrimaryLogId string is passed errormsg({TYPE})",
++                "TYPE", e.what());
++            elog<InvalidArgument>(Argument::ARGUMENT_NAME("PRIMARYLOGID"),
++                                  Argument::ARGUMENT_VALUE("INVALID INPUT"));
++        }
++
++        if (value.empty())
++        {
++            lg2::error("Got empty PrimaryLogId string");
++            elog<InvalidArgument>(Argument::ARGUMENT_NAME("PRIMARYLOGID"),
++                                  Argument::ARGUMENT_VALUE("EMPTY STRING"));
++        }
++
++        primaryLogIdStr = value;
++    }
++}
++
++uint64_t Manager::generateTimestamp()
++{
++    uint64_t timestamp =
++        std::chrono::duration_cast<std::chrono::microseconds>(
++            std::chrono::system_clock::now().time_since_epoch())
++            .count();
++
++    if (!entries.empty())
++    {
++        auto latestEntry = entries.crbegin();
++        auto latestEntryPtr = (latestEntry->second).get();
++        uint64_t latestEntryTimestamp =
++            dynamic_cast<faultlog::Entry*>(latestEntryPtr)->startTime();
++        if (latestEntryTimestamp >= timestamp)
++        {
++            // Ensure unique and increasing timestamps
++            timestamp = latestEntryTimestamp + 1;
++        }
++    }
++
++    return timestamp;
++}
++
++void Manager::saveEarliestEntry()
++{
++    auto earliestEntry = entries.begin();
++    uint32_t earliestEntryId = earliestEntry->first;
++    auto earliestEntryPtr = (earliestEntry->second).get();
++    FaultDataType earliestEntryType =
++        dynamic_cast<faultlog::Entry*>(earliestEntryPtr)->type();
++
++    size_t maxNumSavedEntries = 0;
++    std::map<uint32_t, std::unique_ptr<phosphor::dump::Entry>>* savedEntries;
++    bool validSavedEntryType = true;
++
++    switch (earliestEntryType)
++    {
++        case FaultDataType::CPER:
++            maxNumSavedEntries = MAX_NUM_SAVED_CPER_LOG_ENTRIES;
++            savedEntries = &savedCperLogEntries;
++            break;
++        case FaultDataType::Crashdump:
++            maxNumSavedEntries = MAX_NUM_SAVED_CRASHDUMP_ENTRIES;
++            savedEntries = &savedCrashdumpEntries;
++            break;
++        default:
++            validSavedEntryType = false;
++    }
++
++    if (validSavedEntryType)
++    {
++        lg2::info(
++            "dump_manager_faultlog.cpp: in saveEarliestEntry(). "
++            "entry id: {ID}, type: {TYPE}, savedEntries->size(): {SIZE}",
++            "ID", earliestEntryId,
++            "TYPE", static_cast<uint32_t>(earliestEntryType),
++            "SIZE", savedEntries->size());
++
++        // Check whether saved entries map has space for a new entry
++        if (savedEntries->size() < maxNumSavedEntries)
++        {
++            dynamic_cast<phosphor::dump::faultlog::Entry*>(
++                earliestEntry->second.get())
++                ->parentMap = savedEntries;
++
++            // Insert earliest entry into saved entries map
++            savedEntries->insert(std::make_pair(
++                earliestEntryId, std::move(earliestEntry->second)));
++        }
++        else
++        {
++            // Delete earliest entry from fault log entries map
++            (entries.at(earliestEntryId))->delete_();
++        }
++    }
++
++    // Erase from fault log entries map
++    entries.erase(earliestEntryId);
++}
++
+ } // namespace faultlog
+ } // namespace dump
+ } // namespace phosphor
+diff --git a/dump_manager_faultlog.hpp b/dump_manager_faultlog.hpp
+index f58b79c..d98f19e 100644
+--- a/dump_manager_faultlog.hpp
++++ b/dump_manager_faultlog.hpp
+@@ -3,11 +3,13 @@
+ #include "config.h"
+ 
+ #include "dump_manager.hpp"
++#include "faultlog_dump_entry.hpp"
+ 
+ #include <phosphor-logging/elog-errors.hpp>
+ #include <phosphor-logging/elog.hpp>
+ #include <phosphor-logging/lg2.hpp>
+ #include <sdbusplus/bus.hpp>
++#include <sdbusplus/bus/match.hpp>
+ #include <sdbusplus/server/object.hpp>
+ #include <xyz/openbmc_project/Dump/Create/server.hpp>
+ 
+@@ -60,6 +62,8 @@ class Manager :
+                 "DIRECTORY", dir, "ERRNO", ec.value(), "ERROR_MESSAGE",
+                 ec.message());
+         }
++
++        registerFaultLogMatches();
+     }
+ 
+     void restore() override
+@@ -69,6 +73,10 @@ class Manager :
+         lg2::info("dump_manager_faultlog restore not implemented");
+     }
+ 
++    /** @brief  Delete all fault log entries and their corresponding fault log
++     * dump files */
++    void deleteAll() override;
++
+     /** @brief Method to create a new fault log dump entry
+      *  @param[in] params - Key-value pair input parameters
+      *
+@@ -78,8 +86,63 @@ class Manager :
+         phosphor::dump::DumpCreateParams params) override;
+ 
+   private:
++    static constexpr uint32_t MAX_NUM_FAULT_LOG_ENTRIES =
++        MAX_TOTAL_FAULT_LOG_ENTRIES - MAX_NUM_SAVED_CRASHDUMP_ENTRIES -
++        MAX_NUM_SAVED_CPER_LOG_ENTRIES;
++
++    /** @brief Map of saved CPER log entry dbus objects based on entry id */
++    std::map<uint32_t, std::unique_ptr<phosphor::dump::Entry>>
++        savedCperLogEntries;
++
++    /** @brief Map of saved crashdump entry dbus objects based on entry id */
++    std::map<uint32_t, std::unique_ptr<phosphor::dump::Entry>>
++        savedCrashdumpEntries;
++
+     /** @brief Path to the dump file*/
+     std::string dumpDir;
++
++    /** @brief D-Bus match for crashdump completion signal */
++    std::unique_ptr<sdbusplus::bus::match_t> crashdumpMatch;
++
++    /** @brief D-Bus match for CPER log added signal */
++    std::unique_ptr<sdbusplus::bus::match_t> cperLogMatch;
++
++    /** @brief Register D-Bus match rules to detect fault events */
++    void registerFaultLogMatches();
++    /** @brief Register D-Bus match rules to detect new crashdumps */
++    void registerCrashdumpMatch();
++    /** @brief Register D-Bus match rules to detect CPER logs */
++    void registerCperLogMatch();
++
++    /** @brief Get and check parameters for createDump() function (throws
++     * exception on error)
++     *  @param[in] params - Key-value pair input parameters
++     *  @param[out] entryType - Log entry type (corresponding to type of data in
++     * primary fault data log)
++     *  @param[out] primaryLogIdStr - Id of primary fault data log
++     */
++    void getAndCheckCreateDumpParams(
++        const phosphor::dump::DumpCreateParams& params,
++        FaultDataType& entryType, std::string& primaryLogIdStr);
++
++    /** @brief Generate the current timestamp, adjusting as needed to ensure an
++     * increase compared to the last fault log entry's timestamp
++     *
++     *  @return timestamp - microseconds since epoch
++     */
++    uint64_t generateTimestamp();
++
++    /** @brief Save earliest fault log entry (if it qualifies to be saved) and
++     * remove it from the main fault log entries map.
++     *
++     *  More specifically, move the earliest entry from the fault log
++     *  entries map to the saved entries map based on its type. Before
++     *  moving it, this function checks (1) whether a saved entries map
++     *  exists for the entry type, and if so, then (2) whether the
++     *  saved entries map is already full. If the entry can't be saved,
++     *  then it's simply deleted from the main fault log entries map.
++     */
++    void saveEarliestEntry();
+ };
+ 
+ } // namespace faultlog
+diff --git a/faultlog_dump_entry.cpp b/faultlog_dump_entry.cpp
+index dfc69ca..9ff1eb3 100644
+--- a/faultlog_dump_entry.cpp
++++ b/faultlog_dump_entry.cpp
+@@ -25,7 +25,7 @@ void Entry::delete_()
+     }
+ 
+     // Remove Dump entry D-bus object
+-    phosphor::dump::Entry::delete_();
++    parentMap->erase(id);
+ }
+ 
+ } // namespace faultlog
+diff --git a/faultlog_dump_entry.hpp b/faultlog_dump_entry.hpp
+index 44fcfc6..5988c64 100644
+--- a/faultlog_dump_entry.hpp
++++ b/faultlog_dump_entry.hpp
+@@ -4,6 +4,9 @@
+ 
+ #include <sdbusplus/bus.hpp>
+ #include <sdbusplus/server/object.hpp>
++#include <xyz/openbmc_project/Common/FaultLogType/server.hpp>
++#include <xyz/openbmc_project/Dump/Entry/FaultLog/server.hpp>
++#include <xyz/openbmc_project/Dump/Entry/server.hpp>
+ #include <xyz/openbmc_project/Object/Delete/server.hpp>
+ #include <xyz/openbmc_project/Time/EpochTime/server.hpp>
+ 
+@@ -18,11 +21,20 @@ namespace faultlog
+ template <typename T>
+ using ServerObject = typename sdbusplus::server::object_t<T>;
+ 
++using EntryIfaces = sdbusplus::server::object_t<
++    sdbusplus::xyz::openbmc_project::Dump::Entry::server::FaultLog>;
++
++using FaultDataType = sdbusplus::xyz::openbmc_project::Common::server::
++    FaultLogType::FaultLogTypes;
++
++
+ /** @class Entry
+  *  @brief OpenBMC Fault Log Dump Entry implementation.
+  */
+-class Entry : virtual public phosphor::dump::Entry
++class Entry : virtual public EntryIfaces, virtual public phosphor::dump::Entry
+ {
++  friend class Manager;
++
+   public:
+     Entry() = delete;
+     Entry(const Entry&) = delete;
+@@ -44,19 +56,32 @@ class Entry : virtual public phosphor::dump::Entry
+      *  @param[in] originatorType - Originator type
+      *  @param[in] parent - The dump entry's parent.
+      */
+-    Entry(sdbusplus::bus_t& bus, const std::string& objPath, uint32_t dumpId,
+-          uint64_t timeStamp, uint64_t fileSize,
+-          const std::filesystem::path& file,
+-          phosphor::dump::OperationStatus status, std::string originatorId,
+-          originatorTypes originatorType, phosphor::dump::Manager& parent) :
++    Entry(
++        sdbusplus::bus_t& bus, const std::string& objPath, uint32_t dumpId,
++        uint64_t timeStamp, uint64_t fileSize,
++        const std::filesystem::path& file,
++        phosphor::dump::OperationStatus status, std::string originatorId,
++        originatorTypes originatorType, FaultDataType entryType,
++        const std::string& primaryLogIdStr, phosphor::dump::Manager& parent,
++        std::map<uint32_t, std::unique_ptr<phosphor::dump::Entry>>* parentMap) :
++        EntryIfaces(bus, objPath.c_str(), EntryIfaces::action::defer_emit),
+         phosphor::dump::Entry(bus, objPath.c_str(), dumpId, timeStamp, fileSize,
+                               file, status, originatorId, originatorType,
+-                              parent)
+-    {}
++                              parent),
++        parentMap(parentMap)
++    {
++        type(entryType);
++        primaryLogId(primaryLogIdStr);
++    }
+ 
+     /** @brief Delete this d-bus object.
+      */
+     void delete_() override;
++
++  private:
++    /** @brief Fault log map containing this entry (e.g. the main fault log map
++     * or a saved entries map) */
++    std::map<uint32_t, std::unique_ptr<phosphor::dump::Entry>>* parentMap;
+ };
+ 
+ } // namespace faultlog
+diff --git a/meson.build b/meson.build
+index 7071a51..fe1541b 100644
+--- a/meson.build
++++ b/meson.build
+@@ -185,6 +185,31 @@ conf_data.set_quoted(
+     get_option('RESOURCE_DUMP_OBJ_ENTRY'),
+     description: 'The resource dump entry D-Bus object path',
+ )
++conf_data.set_quoted(
++    'CPER_LOG_PATH',
++    get_option('CPER_LOG_PATH'),
++    description : 'File system path containing CPER logs'
++)
++conf_data.set(
++    'CPER_LOG_ID_STRING_LEN',
++    get_option('CPER_LOG_ID_STRING_LEN'),
++    description : 'Length of GUID string identifying a CPER log'
++)
++conf_data.set(
++    'MAX_TOTAL_FAULT_LOG_ENTRIES',
++    get_option('MAX_TOTAL_FAULT_LOG_ENTRIES'),
++    description : 'Maximum number of fault log entries including those specially saved'
++ )
++conf_data.set(
++    'MAX_NUM_SAVED_CRASHDUMP_ENTRIES',
++    get_option('MAX_NUM_SAVED_CRASHDUMP_ENTRIES'),
++    description : 'Maximum number of specially saved crashdump entries'
++)
++conf_data.set(
++    'MAX_NUM_SAVED_CPER_LOG_ENTRIES',
++    get_option('MAX_NUM_SAVED_CPER_LOG_ENTRIES'),
++    description : 'Maximum number of specially saved CPER log entries'
++)
+ 
+ if cpp.has_header('poll.h')
+     add_project_arguments('-DPLDM_HAS_POLL=1', language: 'cpp')
+@@ -192,6 +217,12 @@ endif
+ 
+ configure_file(configuration: conf_data, output: 'config.h')
+ 
++assert(get_option('MAX_NUM_SAVED_CPER_LOG_ENTRIES') >= 0, 'MAX_TOTAL_FAULT_LOG_ENTRIES >= 0')
++assert(get_option('MAX_NUM_SAVED_CRASHDUMP_ENTRIES') >= 0, 'MAX_NUM_SAVED_CRASHDUMP_ENTRIES >= 0')
++assert(get_option('MAX_TOTAL_FAULT_LOG_ENTRIES') >= 0, 'MAX_TOTAL_FAULT_LOG_ENTRIES >= 0')
++assert(get_option('MAX_NUM_SAVED_CPER_LOG_ENTRIES') + get_option('MAX_NUM_SAVED_CRASHDUMP_ENTRIES') < get_option('MAX_TOTAL_FAULT_LOG_ENTRIES'),
++       'MAX_TOTAL_FAULT_LOG_ENTRIES must be greater than the maximum total of number of saved entries of all types')
++
+ dump_types_yaml_files = []
+ 
+ # Dump types YAML file
+diff --git a/meson.options b/meson.options
+index 57cc06e..7952776 100644
+--- a/meson.options
++++ b/meson.options
+@@ -143,6 +143,31 @@ option(
+     description: 'The fault log dump entry D-Bus object path',
+ )
+ 
++option('CPER_LOG_PATH', type : 'string',
++        value : '/run/bmcweb/redfish/v1/Systems/system/LogServices/',
++        description : 'File system path containing CPER logs'
++      )
++
++option('CPER_LOG_ID_STRING_LEN', type : 'integer',
++        value : 81,
++        description : 'Length of ID string identifying a CPER log'
++      )
++
++option('MAX_TOTAL_FAULT_LOG_ENTRIES', type : 'integer',
++        value : 1000,
++        description : 'Maximum number of fault log entries including those specially saved'
++      )
++
++option('MAX_NUM_SAVED_CRASHDUMP_ENTRIES', type : 'integer',
++        value : 1,
++        description : 'Maximum number of specially saved crashdump entries'
++      )
++
++option('MAX_NUM_SAVED_CPER_LOG_ENTRIES', type : 'integer',
++        value : 20,
++        description : 'Maximum number of specially saved CPER log entries'
++      )
++
+ # Configurations for openpower-dump extension
+ 
+ # System dump options
+-- 
+2.34.1
+
