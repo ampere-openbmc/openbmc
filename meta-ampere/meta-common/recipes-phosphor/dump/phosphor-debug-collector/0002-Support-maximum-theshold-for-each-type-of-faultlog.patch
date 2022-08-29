@@ -1,0 +1,397 @@
+From a891fdc26aa921b58a29711d011dd6672fc5d312 Mon Sep 17 00:00:00 2001
+From: Dung Cao <dung@os.amperecomputing.com>
+Date: Tue, 20 Aug 2024 16:37:21 +0700
+Subject: [PATCH 2/5] Support maximum theshold for each type of faultlog
+
+Support maximum theshold entry for CPER type and CrashDump type.
+
+When the number of fault log entries exceed the maximum limit,
+remove the entry and remove the file that stored the additional
+data.
+
+When the number of CPER/Crashdump entries exceed the maximum limit,
+remove the file that stored the additional data.
+
+Upstream-Status: Pending
+
+Signed-off-by: Dung Cao <dung@os.amperecomputing.com>
+---
+ dump_manager_faultlog.cpp | 177 +++++++++++++++++++++++++++++++++++---
+ dump_manager_faultlog.hpp |  27 +++++-
+ faultlog_dump_entry.hpp   |   4 +-
+ meson.build               |   9 ++
+ meson.options             |  17 +++-
+ 5 files changed, 216 insertions(+), 18 deletions(-)
+
+diff --git a/dump_manager_faultlog.cpp b/dump_manager_faultlog.cpp
+index 20151e7..662552f 100644
+--- a/dump_manager_faultlog.cpp
++++ b/dump_manager_faultlog.cpp
+@@ -58,18 +58,11 @@ sdbusplus::message::object_path
+
+     FaultDataType entryType = FaultDataType::Crashdump;
+     std::string primaryLogIdStr;
++    std::string additionalTypeStr;
+
+-    getAndCheckCreateDumpParams(params, entryType, primaryLogIdStr);
+-
+-    // To stay within the limit of MAX_NUM_FAULT_LOG_ENTRIES we need to remove
+-    // an entry from the fault log map to make room for creating a new entry
+-    if (entries.size() == MAX_NUM_FAULT_LOG_ENTRIES)
+-    {
+-        // Save the earliest fault log entry to a saved entries map (if
+-        // it qualifies to be saved), and remove it from the main fault
+-        // log entries map.
+-        saveEarliestEntry();
+-    }
++    getAndCheckCreateDumpParams(params, entryType, primaryLogIdStr,
++                                additionalTypeStr);
++    checkThresholdFaultLog(entryType, additionalTypeStr);
+
+     // Get the originator id and type from params
+     std::string originatorId;
+@@ -126,7 +119,7 @@ sdbusplus::message::object_path
+                 std::filesystem::file_size(faultLogFilePath), faultLogFilePath,
+                 phosphor::dump::OperationStatus::Completed,
+                 originatorId, originatorType, entryType,
+-                primaryLogIdStr, *this, &entries)));
++                primaryLogIdStr, additionalTypeStr, *this, &entries)));
+     }
+     catch (const std::invalid_argument& e)
+     {
+@@ -146,6 +139,13 @@ void Manager::deleteAll()
+ {
+     lg2::info("In dump_manager_faultlog.hpp deleteAll");
+
++    lastEntryId = 0;
++    faultLogSize = 0;
++    cperLogSize = 0;
++    crashdumpSize = 0;
++
++    removeAllDataEntry();
++
+     phosphor::dump::Manager::deleteAll();
+
+     auto iter = savedCperLogEntries.begin();
+@@ -328,7 +328,7 @@ void Manager::registerCperLogMatch()
+
+ void Manager::getAndCheckCreateDumpParams(
+     const phosphor::dump::DumpCreateParams& params, FaultDataType& entryType,
+-    std::string& primaryLogIdStr)
++    std::string& primaryLogIdStr, std::string& additionalTypeName)
+ {
+     using InvalidArgument =
+         sdbusplus::xyz::openbmc_project::Common::Error::InvalidArgument;
+@@ -487,6 +487,157 @@ void Manager::saveEarliestEntry()
+     entries.erase(earliestEntryId);
+ }
+
++void Manager::checkThresholdFaultLog(FaultDataType entryType,
++                                     std::string &additionalTypeStr)
++{
++    if (faultLogSize == MAX_TOTAL_FAULT_LOG_ENTRIES)
++    {
++        removeEarliestEntry(additionalTypeStr);
++    }
++    else
++    {
++        faultLogSize++;
++    }
++
++    if (entryType == FaultDataType::CPER)
++    {
++        if (cperLogSize == MAX_TOTAL_CPER_LOG_ENTRIES)
++            removeEarliestDataEntry(entryType);
++        else
++            cperLogSize++;
++    }
++    else if (entryType == FaultDataType::Crashdump)
++    {
++        if (additionalTypeStr.empty())
++        {
++            if (crashdumpSize == MAX_TOTAL_CRASHDUMP_ENTRIES)
++                removeEarliestDataEntry(entryType);
++            else
++                crashdumpSize++;
++        }
++        else
++        {
++            /* OEM */
++        }
++    }
++    else
++    {
++        lg2::error("Incorrect entry type");
++        elog<InternalFailure>();
++    }
++}
++
++void Manager::removeAllDataEntry()
++{
++    for ( auto it = entries.begin(); it != entries.end(); ++it  )
++    {
++        auto secondPtr = it->second.get();
++        FaultDataType entryType =
++                dynamic_cast<faultlog::Entry*>(secondPtr)->type();
++        std::string primaryLogId =
++                dynamic_cast<faultlog::Entry*>(secondPtr)->primaryLogId();
++        // Remove fault log file
++        std::string faultLogFilePath;
++        switch (entryType) {
++        case FaultDataType::CPER:
++            faultLogFilePath = std::string(CPER_LOG_PATH) + primaryLogId;
++            break;
++        case FaultDataType::Crashdump:
++            faultLogFilePath = std::string(CRASHDUMP_LOG_PATH) + primaryLogId;
++            break;
++        default:
++            lg2::error("Incorrect FaultLog Entry Type");
++            elog<InternalFailure>();
++            break;
++        }
++        if (std::filesystem::exists(faultLogFilePath.c_str()))
++        {
++            std::filesystem::remove(faultLogFilePath.c_str());
++        }
++    }
++}
++
++void Manager::removeEarliestDataEntry(FaultDataType type)
++{
++    for ( auto it = entries.begin(); it != entries.end(); ++it  )
++    {
++        auto secondPtr = it->second.get();
++        FaultDataType entryType =
++                dynamic_cast<faultlog::Entry*>(secondPtr)->type();
++        std::string primaryLogId =
++                dynamic_cast<faultlog::Entry*>(secondPtr)->primaryLogId();
++        if (entryType == type)
++        {
++            // Remove fault log file
++            std::string faultLogFilePath;
++            switch (entryType) {
++            case FaultDataType::CPER:
++                faultLogFilePath = std::string(CPER_LOG_PATH) + primaryLogId;
++                break;
++            case FaultDataType::Crashdump:
++                faultLogFilePath = std::string(CRASHDUMP_LOG_PATH) + primaryLogId;
++                break;
++            default:
++                lg2::error("Incorrect FaultLog Entry Type");
++                elog<InternalFailure>();
++                break;
++            }
++            if (std::filesystem::exists(faultLogFilePath.c_str()))
++            {
++                std::filesystem::remove(faultLogFilePath.c_str());
++                break;
++            }
++        }
++    }
++}
++
++void Manager::removeEarliestEntry(std::string &additionalTypeStr)
++{
++    auto it = entries.begin();
++    auto secondPtr = it->second.get();
++    FaultDataType entryType =
++            dynamic_cast<faultlog::Entry*>(secondPtr)->type();
++    std::string primaryLogId =
++            dynamic_cast<faultlog::Entry*>(secondPtr)->primaryLogId();
++    std::string faultLogFilePath;
++    switch (entryType) {
++    case FaultDataType::CPER:
++        faultLogFilePath = std::string(CPER_LOG_PATH) + primaryLogId;
++        break;
++    case FaultDataType::Crashdump:
++        faultLogFilePath = std::string(CRASHDUMP_LOG_PATH) + primaryLogId;
++        break;
++    default:
++        lg2::error("Incorrect FaultLog Entry Type");
++        elog<InternalFailure>();
++        break;
++    }
++
++    if (std::filesystem::exists(faultLogFilePath.c_str()))
++    {
++        std::filesystem::remove(faultLogFilePath.c_str());
++        switch (entryType) {
++        case FaultDataType::CPER:
++            cperLogSize--;
++            break;
++        case FaultDataType::Crashdump:
++            if (additionalTypeStr.empty())
++                crashdumpSize--;
++            else
++            {
++                /* OEM */
++            }
++            break;
++        default:
++            lg2::error("Incorrect FaultLog Entry Type");
++            elog<InternalFailure>();
++            break;
++        }
++    }
++
++    entries.erase(it);
++}
++
+ } // namespace faultlog
+ } // namespace dump
+ } // namespace phosphor
+diff --git a/dump_manager_faultlog.hpp b/dump_manager_faultlog.hpp
+index a5d5d23..7ca14b0 100644
+--- a/dump_manager_faultlog.hpp
++++ b/dump_manager_faultlog.hpp
+@@ -62,6 +62,9 @@ class Manager :
+         }
+
+         registerFaultLogMatches();
++        faultLogSize = 0;
++        cperLogSize = 0;
++        crashdumpSize = 0;
+     }
+
+     void restore() override
+@@ -85,8 +88,7 @@ class Manager :
+
+   private:
+     static constexpr uint32_t MAX_NUM_FAULT_LOG_ENTRIES =
+-        MAX_TOTAL_FAULT_LOG_ENTRIES - MAX_NUM_SAVED_CRASHDUMP_ENTRIES -
+-        MAX_NUM_SAVED_CPER_LOG_ENTRIES;
++            MAX_TOTAL_CPER_LOG_ENTRIES + MAX_TOTAL_CRASHDUMP_ENTRIES;
+
+     /** @brief Map of saved CPER log entry dbus objects based on entry id */
+     std::map<uint32_t, std::unique_ptr<phosphor::dump::Entry>>
+@@ -96,6 +98,10 @@ class Manager :
+     std::map<uint32_t, std::unique_ptr<phosphor::dump::Entry>>
+         savedCrashdumpEntries;
+
++    uint32_t faultLogSize;
++    uint32_t cperLogSize;
++    uint32_t crashdumpSize;
++
+     /** @brief Path to the dump file*/
+     std::string dumpDir;
+
+@@ -118,10 +124,12 @@ class Manager :
+      *  @param[out] entryType - Log entry type (corresponding to type of data in
+      * primary fault data log)
+      *  @param[out] primaryLogIdStr - Id of primary fault data log
++     *  @param[out] additionalTypeName - OEM format of a entryType
+      */
+     void getAndCheckCreateDumpParams(
+         const phosphor::dump::DumpCreateParams& params,
+-        FaultDataType& entryType, std::string& primaryLogIdStr);
++        FaultDataType& entryType, std::string& primaryLogIdStr,
++        std::string& additionalTypeName);
+
+     /** @brief Generate the current timestamp, adjusting as needed to ensure an
+      * increase compared to the last fault log entry's timestamp
+@@ -141,6 +149,19 @@ class Manager :
+      *  then it's simply deleted from the main fault log entries map.
+      */
+     void saveEarliestEntry();
++
++    /** @brief Remove all FaultLog data */
++    void removeAllDataEntry();
++
++    /** @brief Remove earliest FaultLog data match with FaultLog type */
++    void removeEarliestDataEntry(FaultDataType type);
++
++    /** @brief Remove earliest FaultLog data and entry */
++    void removeEarliestEntry(std::string &additionalTypeStr);
++
++    /** @brief Check threshold condition of FaultLog */
++    void checkThresholdFaultLog(FaultDataType type,
++                                std::string &additionalTypeStr);
+ };
+
+ } // namespace faultlog
+diff --git a/faultlog_dump_entry.hpp b/faultlog_dump_entry.hpp
+index ca39410..e492241 100644
+--- a/faultlog_dump_entry.hpp
++++ b/faultlog_dump_entry.hpp
+@@ -63,7 +63,8 @@ class Entry : virtual public EntryIfaces, virtual public phosphor::dump::Entry
+         const std::filesystem::path& file,
+         phosphor::dump::OperationStatus status, std::string originatorId,
+         originatorTypes originatorType, FaultDataType entryType,
+-        const std::string& primaryLogIdStr, phosphor::dump::Manager& parent,
++        const std::string& primaryLogIdStr, const std::string& additionalTypeStr,
++        phosphor::dump::Manager& parent,
+         std::map<uint32_t, std::unique_ptr<phosphor::dump::Entry>>* parentMap) :
+         EntryIfaces(bus, objPath.c_str(), EntryIfaces::action::defer_emit),
+         phosphor::dump::Entry(bus, objPath.c_str(), dumpId, timeStamp, fileSize,
+@@ -73,6 +74,7 @@ class Entry : virtual public EntryIfaces, virtual public phosphor::dump::Entry
+     {
+         type(entryType);
+         primaryLogId(primaryLogIdStr);
++        additionalTypeName(additionalTypeStr);
+     }
+
+     /** @brief Delete this d-bus object.
+diff --git a/meson.build b/meson.build
+index ee48f40..6c0ec7c 100644
+--- a/meson.build
++++ b/meson.build
+@@ -121,12 +121,21 @@ conf_data.set('BMC_DUMP_ROTATE_CONFIG', get_option('dump_rotate_config').allowed
+ conf_data.set_quoted('CPER_LOG_PATH', get_option('CPER_LOG_PATH'),
+                       description : 'File system path containing CPER logs'
+                     )
++conf_data.set_quoted('CRASHDUMP_LOG_PATH', get_option('CRASHDUMP_LOG_PATH'),
++                      description : 'File system path containing CrashDump logs'
++                    )
+ conf_data.set('CPER_LOG_ID_STRING_LEN', get_option('CPER_LOG_ID_STRING_LEN'),
+                       description : 'Length of GUID string identifying a CPER log'
+                     )
+ conf_data.set('MAX_TOTAL_FAULT_LOG_ENTRIES', get_option('MAX_TOTAL_FAULT_LOG_ENTRIES'),
+                       description : 'Maximum number of fault log entries including those specially saved'
+                     )
++conf_data.set('MAX_TOTAL_CPER_LOG_ENTRIES', get_option('MAX_TOTAL_CPER_LOG_ENTRIES'),
++                      description : 'Maximum number of CPER entries'
++                    )
++conf_data.set('MAX_TOTAL_CRASHDUMP_ENTRIES', get_option('MAX_TOTAL_CRASHDUMP_ENTRIES'),
++                      description : 'Maximum number of CrashDump entries'
++                    )
+ conf_data.set('MAX_NUM_SAVED_CRASHDUMP_ENTRIES', get_option('MAX_NUM_SAVED_CRASHDUMP_ENTRIES'),
+                       description : 'Maximum number of specially saved crashdump entries'
+                     )
+diff --git a/meson.options b/meson.options
+index 09c94ae..fd5ec05 100644
+--- a/meson.options
++++ b/meson.options
+@@ -103,7 +103,12 @@ option('FAULTLOG_DUMP_OBJ_ENTRY', type : 'string',
+       )
+
+ option('CPER_LOG_PATH', type : 'string',
+-        value : '/run/bmcweb/redfish/v1/Systems/system/LogServices/',
++        value : '/var/lib/faultlogs/cper/',
++        description : 'File system path containing CPER logs'
++      )
++
++option('CRASHDUMP_LOG_PATH', type : 'string',
++        value : '/var/lib/faultlogs/crashdump/',
+         description : 'File system path containing CPER logs'
+       )
+
+@@ -117,6 +122,16 @@ option('MAX_TOTAL_FAULT_LOG_ENTRIES', type : 'integer',
+         description : 'Maximum number of fault log entries including those specially saved'
+       )
+
++option('MAX_TOTAL_CPER_LOG_ENTRIES', type : 'integer',
++        value : 100,
++        description : 'Maximum number of CPER entries'
++      )
++
++option('MAX_TOTAL_CRASHDUMP_ENTRIES', type : 'integer',
++        value : 10,
++        description : 'Maximum number of CrashDump entries'
++      )
++
+ option('MAX_NUM_SAVED_CRASHDUMP_ENTRIES', type : 'integer',
+         value : 1,
+         description : 'Maximum number of specially saved crashdump entries'
+--
+2.34.1
+

@@ -1,0 +1,58 @@
+From f9105ef8f6dbd5e6765fd95d1a2891f0d53ce828 Mon Sep 17 00:00:00 2001
+From: Dung Cao <dung@os.amperecomputing.com>
+Date: Tue, 20 Aug 2024 16:39:07 +0700
+Subject: [PATCH 5/5] Prevent too many dump is captured simultaneously
+
+Not only prevent too many dump is captured simultaneously for
+dumpType=UserRequested but also need to prevent for all of dump types.
+
+Upstream-Status: Pending
+
+Signed-off-by: Dung Cao <dung@os.amperecomputing.com>
+---
+ dump_manager_bmc.cpp | 15 +++++----------
+ 1 file changed, 5 insertions(+), 10 deletions(-)
+
+diff --git a/dump_manager_bmc.cpp b/dump_manager_bmc.cpp
+index a6c64d6..8a4f5b7 100644
+--- a/dump_manager_bmc.cpp
++++ b/dump_manager_bmc.cpp
+@@ -63,7 +63,7 @@ sdbusplus::message::object_path
+     std::string path = extractParameter<std::string>(
+         convertCreateParametersToString(CreateParameters::FilePath), params);
+
+-    if ((Manager::fUserDumpInProgress == true) && (dumpType == DumpTypes::USER))
++    if (Manager::fUserDumpInProgress == true)
+     {
+         lg2::info("Another user initiated dump in progress");
+         elog<sdbusplus::xyz::openbmc_project::Common::Error::Unavailable>();
+@@ -98,10 +98,8 @@ sdbusplus::message::object_path
+         elog<InternalFailure>();
+     }
+
+-    if (dumpType == DumpTypes::USER)
+-    {
+-        Manager::fUserDumpInProgress = true;
+-    }
++    Manager::fUserDumpInProgress = true;
++
+     return objPath.string();
+ }
+
+@@ -133,11 +131,8 @@ uint32_t Manager::captureDump(DumpTypes type, const std::string& path)
+     else if (pid > 0)
+     {
+         Child::Callback callback = [this, type, pid](Child&, const siginfo_t*) {
+-            if (type == DumpTypes::USER)
+-            {
+-                lg2::info("User initiated dump completed, resetting flag");
+-                Manager::fUserDumpInProgress = false;
+-            }
++            lg2::info("User initiated dump completed, resetting flag");
++            Manager::fUserDumpInProgress = false;
+             this->childPtrMap.erase(pid);
+         };
+         try
+--
+2.34.1
+
