@@ -1,0 +1,185 @@
+From bd28070ecd5b5e1a05662f2640897e71434c83d0 Mon Sep 17 00:00:00 2001
+From: Dung Cao <dung@os.amperecomputing.com>
+Date: Tue, 20 Aug 2024 16:37:53 +0700
+Subject: [PATCH 3/5] Support BERT and Diagnostic type
+
+BERT and Diagnostic type are AMPERE OEM type of Crashdump.
+The entry log will show as below:
+
+{
+  "@odata.id": "/redfish/v1/Managers/bmc/LogServices/FaultLog/Entries/3",
+  "@odata.type": "#LogEntry.v1_9_0.LogEntry",
+  "AdditionalDataURI": "/redfish/v1/Managers/bmc/LogServices/FaultLog/Entries/3/attachment",
+  "Created": "2023-03-01T08:53:16.159503+00:00",
+  "DiagnosticDataType": "OEM",
+  "EntryType": "Event",
+  "Id": "3",
+  "Name": "FaultLog Dump Entry",
+  "OEMDiagnosticDataType": "BERT"
+},
+
+{
+  "@odata.id": "/redfish/v1/Managers/bmc/LogServices/FaultLog/Entries/4",
+  "@odata.type": "#LogEntry.v1_9_0.LogEntry",
+  "AdditionalDataURI": "/redfish/v1/Managers/bmc/LogServices/FaultLog/Entries/4/attachment",
+  "Created": "2023-03-01T08:53:16.159503+00:00",
+  "DiagnosticDataType": "OEM",
+  "EntryType": "Event",
+  "Id": "4",
+  "Name": "FaultLog Dump Entry",
+  "OEMDiagnosticDataType": "Diagnostic"
+},
+
+Upstream-Status: Pending
+
+Signed-off-by: Dung Cao <dung@os.amperecomputing.com>
+---
+ dump_manager_faultlog.cpp | 37 +++++++++++++++++++++++++++++++++++++
+ dump_manager_faultlog.hpp |  4 ++++
+ meson.build               | 10 ++++++++++
+ meson.options             | 10 ++++++++++
+ 4 files changed, 61 insertions(+)
+
+diff --git a/dump_manager_faultlog.cpp b/dump_manager_faultlog.cpp
+index da4525c..7d03c8b 100644
+--- a/dump_manager_faultlog.cpp
++++ b/dump_manager_faultlog.cpp
+@@ -60,6 +60,13 @@ sdbusplus::message::object_path Manager::createDump(
+     std::string primaryLogIdStr;
+     std::string additionalTypeStr;
+ 
++    if (MAX_TOTAL_CRASHDUMP_ENTRIES != (MAX_TOTAL_BERT_ENTRIES +
++                                        MAX_TOTAL_DIAGNOSTIC_ENTRIES))
++    {
++        lg2::error("Incorrect total of BERT and Diagnostic "
++                   "entries with total CrashDump entries\n");
++        elog<InternalFailure>();
++    }
+     getAndCheckCreateDumpParams(params, entryType, primaryLogIdStr,
+                                 additionalTypeStr);
+     checkThresholdFaultLog(entryType, additionalTypeStr);
+@@ -143,6 +150,8 @@ void Manager::deleteAll()
+     faultLogSize = 0;
+     cperLogSize = 0;
+     crashdumpSize = 0;
++    bertSize = 0;
++    diagnosticSize = 0;
+ 
+     removeAllDataEntry();
+ 
+@@ -365,6 +374,16 @@ void Manager::getAndCheckCreateDumpParams(
+         {
+             entryType = FaultDataType::CPER;
+         }
++        else if (value == "BERT")
++        {
++            entryType = FaultDataType::Crashdump;
++            additionalTypeName = "BERT";
++        }
++        else if (value == "Diagnostic")
++        {
++            entryType = FaultDataType::Crashdump;
++            additionalTypeName = "Diagnostic";
++        }
+         else
+         {
+             lg2::error("Unexpected entry type, not handled");
+@@ -518,6 +537,20 @@ void Manager::checkThresholdFaultLog(FaultDataType entryType,
+         else
+         {
+             /* OEM */
++            if (additionalTypeStr == "BERT")
++            {
++                if (bertSize == MAX_TOTAL_BERT_ENTRIES)
++                    removeEarliestDataEntry(entryType);
++                else
++                    bertSize++;
++            }
++            if (additionalTypeStr == "Diagnostic")
++            {
++                if (diagnosticSize == MAX_TOTAL_DIAGNOSTIC_ENTRIES)
++                    removeEarliestDataEntry(entryType);
++                else
++                    diagnosticSize++;
++            }
+         }
+     }
+     else
+@@ -585,6 +618,10 @@ void Manager::removeEarliestEntry(std::string &additionalTypeStr)
+             else
+             {
+                 /* OEM */
++                if (additionalTypeStr == "BERT")
++                    bertSize--;
++                if (additionalTypeStr == "Diagnostic")
++                    diagnosticSize--;
+             }
+             break;
+         default:
+diff --git a/dump_manager_faultlog.hpp b/dump_manager_faultlog.hpp
+index 6152401..94cb87d 100644
+--- a/dump_manager_faultlog.hpp
++++ b/dump_manager_faultlog.hpp
+@@ -67,6 +67,8 @@ class Manager :
+         faultLogSize = 0;
+         cperLogSize = 0;
+         crashdumpSize = 0;
++        bertSize = 0;
++        diagnosticSize = 0;
+     }
+ 
+     void restore() override
+@@ -103,6 +105,8 @@ class Manager :
+     uint32_t faultLogSize;
+     uint32_t cperLogSize;
+     uint32_t crashdumpSize;
++    uint32_t bertSize;
++    uint32_t diagnosticSize;
+ 
+     /** @brief Path to the dump file*/
+     std::string dumpDir;
+diff --git a/meson.build b/meson.build
+index 6942322..cd14907 100644
+--- a/meson.build
++++ b/meson.build
+@@ -225,6 +225,16 @@ conf_data.set(
+     get_option('MAX_TOTAL_CRASHDUMP_ENTRIES'),
+     description : 'Maximum number of CrashDump entries'
+ )
++conf_data.set(
++    'MAX_TOTAL_BERT_ENTRIES',
++    get_option('MAX_TOTAL_BERT_ENTRIES'),
++    description : 'Maximum number of BERT entries '
++)
++conf_data.set(
++    'MAX_TOTAL_DIAGNOSTIC_ENTRIES',
++    get_option('MAX_TOTAL_DIAGNOSTIC_ENTRIES'),
++    description : 'Maximum number of Diagnostic entries'
++)
+ 
+ if cpp.has_header('poll.h')
+     add_project_arguments('-DPLDM_HAS_POLL=1', language: 'cpp')
+diff --git a/meson.options b/meson.options
+index 75a9d80..3cc8ad3 100644
+--- a/meson.options
++++ b/meson.options
+@@ -173,6 +173,16 @@ option('MAX_TOTAL_CRASHDUMP_ENTRIES', type : 'integer',
+         description : 'Maximum number of CrashDump entries'
+       )
+ 
++option('MAX_TOTAL_BERT_ENTRIES', type : 'integer',
++        value : 2,
++        description : 'Maximum number of BERT entries'
++      )
++
++option('MAX_TOTAL_DIAGNOSTIC_ENTRIES', type : 'integer',
++        value : 8,
++        description : 'Maximum number of Diagnostic entries'
++      )
++
+ option('MAX_NUM_SAVED_CRASHDUMP_ENTRIES', type : 'integer',
+         value : 1,
+         description : 'Maximum number of specially saved crashdump entries'
+-- 
+2.34.1
+
