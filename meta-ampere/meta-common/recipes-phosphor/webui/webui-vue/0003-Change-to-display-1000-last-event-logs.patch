@@ -1,0 +1,117 @@
+From 51279b8f0eb177616d1c9a67a0e9919ad91800de Mon Sep 17 00:00:00 2001
+From: HuyLe <hule@amperecomputing.com>
+Date: Wed, 4 Dec 2024 09:13:14 +0000
+Subject: [PATCH 3/7] Change to display 1000 last event logs
+
+WebUI currently displays only the first 1000 event logs. This makes
+users not know any new event if there are more than 1000 events logged.
+This commit changes to display 1000 last events instead.
+
+Upstream-Status: Pending
+
+Change-Id: I27ebd63e218c6185f4b0c4407ded12d128f8d343
+Signed-off-by: HuyLe <hule@amperecomputing.com>
+---
+ src/store/modules/Logs/EventLogStore.js | 79 +++++++++++++++----------
+ 1 file changed, 48 insertions(+), 31 deletions(-)
+
+diff --git a/src/store/modules/Logs/EventLogStore.js b/src/store/modules/Logs/EventLogStore.js
+index 360fbf5..2efbb92 100644
+--- a/src/store/modules/Logs/EventLogStore.js
++++ b/src/store/modules/Logs/EventLogStore.js
+@@ -35,9 +35,37 @@ const EventLogStore = {
+       getHealthStatus(state.allEvents, state.loadedEvents),
+   },
+   mutations: {
+-    setAllEvents: (state, allEvents) => (
+-      (state.allEvents = allEvents), (state.loadedEvents = true)
+-    ),
++    setAllEvents: (state, allEvents) => {
++      state.allEvents = allEvents.map((log) => {
++        const {
++          Id,
++          Severity,
++          Created,
++          EntryType,
++          Message,
++          Name,
++          Modified,
++          Resolved,
++          AdditionalDataURI,
++        } = log;
++
++        return {
++          id: Id,
++          severity: Severity,
++          date: new Date(Created),
++          type: EntryType,
++          description: Message,
++          name: Name,
++          modifiedDate: new Date(Modified),
++          uri: log['@odata.id'],
++          filterByStatus: Resolved ? 'Resolved' : 'Unresolved',
++          status: Resolved, //true or false
++          additionalDataUri: AdditionalDataURI,
++        };
++      });
++
++      state.loadedEvents = true;
++    },
+   },
+   actions: {
+     async getEventLogData({ commit }) {
+@@ -45,34 +73,23 @@ const EventLogStore = {
+         .get(
+           `${await this.dispatch('global/getSystemPath')}/LogServices/EventLog/Entries`,
+         )
+-        .then(({ data: { Members = [] } = {} }) => {
+-          const eventLogs = Members.map((log) => {
+-            const {
+-              Id,
+-              Severity,
+-              Created,
+-              EntryType,
+-              Message,
+-              Name,
+-              Modified,
+-              Resolved,
+-              AdditionalDataURI,
+-            } = log;
+-            return {
+-              id: Id,
+-              severity: Severity,
+-              date: new Date(Created),
+-              type: EntryType,
+-              description: Message,
+-              name: Name,
+-              modifiedDate: new Date(Modified),
+-              uri: log['@odata.id'],
+-              filterByStatus: Resolved ? 'Resolved' : 'Unresolved',
+-              status: Resolved, //true or false
+-              additionalDataUri: AdditionalDataURI,
+-            };
+-          });
+-          commit('setAllEvents', eventLogs);
++        .then((response) => {
++          const cnt = response.data['Members@odata.count'];
++          if (cnt > 1000) {
++            const skipIndex = cnt - 1000;
++            api
++              .get(
++                `/redfish/v1/Systems/system/LogServices/EventLog/Entries?$skip=${skipIndex}`,
++              )
++              .then(({ data: { Members = [] } = {} }) => {
++                commit('setAllEvents', Members);
++              })
++              .catch((error) => {
++                console.log('Event Log Data:', error);
++              });
++          } else {
++            commit('setAllEvents', response.data.Members);
++          }
+         })
+         .catch((error) => {
+           console.log('Event Log Data:', error);
+--
+2.43.0
+
