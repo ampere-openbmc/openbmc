@@ -1,0 +1,38 @@
+From 381333922f56831ebe9023d1e030a1c992783f52 Mon Sep 17 00:00:00 2001
+From: Huy Le Anh <hule@amperecomputing.com>
+Date: Wed, 4 Dec 2024 09:16:01 +0000
+Subject: [PATCH 7/7] Fix date time format regex check
+
+The regex formula for formatting dates is no longer correct after
+upgrading to Vue3. This commit corrects it by adding a `$` sign to the
+end of the date pattern.
+
+Tested:
+ 1. Log in to BMC Web and go to the date-time setting
+ 2. Click "Manual" to fill Date field with the following
+    format: 2025-06-112
+ 3. Can't save and show "Invalid format"
+
+Upstream-Status: Pending
+
+Signed-off-by: Huy Le Anh <hule@amperecomputing.com>
+---
+ src/views/Settings/DateTime/DateTime.vue | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/views/Settings/DateTime/DateTime.vue b/src/views/Settings/DateTime/DateTime.vue
+index 4475a55..b723530 100644
+--- a/src/views/Settings/DateTime/DateTime.vue
++++ b/src/views/Settings/DateTime/DateTime.vue
+@@ -213,7 +213,7 @@ import { requiredIf } from '@vuelidate/validators';
+ import { helpers } from 'vuelidate/lib/validators';
+ import { useI18n } from 'vue-i18n';
+
+-const isoDateRegex = /([12]\d{3}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01]))/;
++const isoDateRegex = /([12]\d{3}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$)/;
+ const isoTimeRegex = /^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/;
+
+ export default {
+--
+2.43.0
+

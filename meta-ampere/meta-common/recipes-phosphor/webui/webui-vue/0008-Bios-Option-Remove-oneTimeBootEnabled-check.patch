@@ -1,0 +1,46 @@
+From 236e31ddc4572442aaba9f5664902bcf1c224302 Mon Sep 17 00:00:00 2001
+From: Huy Le Anh <hule@amperecomputing.com>
+Date: Mon, 9 Dec 2024 11:30:58 +0700
+Subject: [PATCH] Bios Option: Remove oneTimeBootEnabled check
+
+At commit [1], the condition oneTimeBootEnabled was added, causing
+BootSettings to only be displayed when oneTimeBootEnabled is true.
+This is incorrect, so this commit removes the condition check for
+oneTimeBootEnabled to ensure the Bios Option is alway displayed by
+default.
+
+Tested:
+  1. Log in to BMC Web and go to the server-power-operations page
+  2. The boot settings options are shown.
+
+[1].
+https://github.com/openbmc/webui-vue/commit/918526f20c16a05c261a56814657942a707323dd
+
+Upstream-Status: Pending
+
+Signed-off-by: Huy Le Anh <hule@amperecomputing.com>
+---
+ .../ServerPowerOperations/ServerPowerOperations.vue        | 7 +------
+ 1 file changed, 1 insertion(+), 6 deletions(-)
+
+diff --git a/src/views/Operations/ServerPowerOperations/ServerPowerOperations.vue b/src/views/Operations/ServerPowerOperations/ServerPowerOperations.vue
+index 9c36f24..491dc7f 100644
+--- a/src/views/Operations/ServerPowerOperations/ServerPowerOperations.vue
++++ b/src/views/Operations/ServerPowerOperations/ServerPowerOperations.vue
+@@ -55,12 +55,7 @@
+       </b-col>
+     </b-row>
+     <b-row>
+-      <b-col
+-        v-if="hasBootSourceOptions && oneTimeBootEnabled"
+-        sm="8"
+-        md="6"
+-        xl="4"
+-      >
++      <b-col v-if="hasBootSourceOptions" sm="8" md="6" xl="4">
+         <page-section
+           :section-title="$t('pageServerPowerOperations.serverBootSettings')"
+         >
+--
+2.25.1
+

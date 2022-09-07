@@ -1,0 +1,53 @@
+From d97a0b88dc456e251940a6fda9d608608a3300fb Mon Sep 17 00:00:00 2001
+From: Huy Le Anh <hule@amperecomputing.com>
+Date: Wed, 4 Dec 2024 09:14:22 +0000
+Subject: [PATCH 5/7] Use the createWebHashHistory method to avoid 404 errors.
+
+When using createWebHistory method in Vue 3, we may encounter a 404
+error when reloading a page or accessing a specific URL directly due to
+a server configuration that does not properly support HTML5 history
+references at [1] and [2]. Switching to createWebHashHistory method
+avoids a 404 error when reloading a page, as it doesn't require a server
+configuration to handle navigation. By using the # sign in the URL, the
+browser processes everything after the # sign without sending it to the
+server, which helps maintain the application state smoothly when
+reloading the page.
+
+Tested:
+ 1. Go to the Obmc web page.
+ 2. Switch between different pages.
+ 3. Reload the website by pressing the reload button on the web browser.
+ 4. The Obmc web page reloads normally, without any errors
+
+[1]. https://router.vuejs.org/guide/essentials/history-mode.html
+[2]. https://stackoverflow.com/questions/66514813/error-404-on-page-reload-with-vue3-routing
+
+Upstream-Status: Pending
+
+Signed-off-by: Huy Le Anh <hule@amperecomputing.com>
+---
+ src/router/index.js | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/router/index.js b/src/router/index.js
+index 27fd96e..625eac0 100644
+--- a/src/router/index.js
++++ b/src/router/index.js
+@@ -1,4 +1,4 @@
+-import { createRouter, createWebHistory } from 'vue-router';
++import { createRouter, createWebHashHistory } from 'vue-router';
+
+ //Do not change store or routes import.
+ //Exact match alias set to support
+@@ -7,7 +7,7 @@ import store from '../store';
+ import routes from './routes';
+
+ const router = createRouter({
+-  history: createWebHistory(process.env.BASE_URL),
++  history: createWebHashHistory(),
+   routes,
+   linkExactActiveClass: 'nav-link--current',
+   scrollBehavior() {
+--
+2.43.0
+
