@@ -1,0 +1,42 @@
+From bb89e03b837a7e5153a5167a7799501aa1aba9f0 Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Mon, 5 Dec 2022 19:46:49 +0700
+Subject: [PATCH 2/2] Support HostInterface privilege role
+
+This commit supports HostInterface privilege role folow the
+HostInterface schema.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+diff --git a/phosphor-ldap-config/ldap_config.hpp b/phosphor-ldap-config/ldap_config.hpp
+index c1ba5ec..4a551fb 100644
+--- a/phosphor-ldap-config/ldap_config.hpp
++++ b/phosphor-ldap-config/ldap_config.hpp
+@@ -275,6 +275,7 @@ class Config : public Ifaces
+     /** @brief available privileges container */
+     std::set<std::string> privMgr = {
+         "priv-admin",
++        "priv-hostinterfaceadmin",
+         "priv-operator",
+         "priv-user",
+     };
+diff --git a/user_mgr.hpp b/user_mgr.hpp
+index ec205e4..116640e 100644
+--- a/user_mgr.hpp
++++ b/user_mgr.hpp
+@@ -376,8 +376,8 @@ class UserMgr : public Ifaces
+     const std::string path;
+
+     /** @brief privilege manager container */
+-    const std::vector<std::string> privMgr = {"priv-admin", "priv-operator",
+-                                              "priv-user"};
++    const std::vector<std::string> privMgr = {"priv-admin", "priv-hostinterfaceadmin",
++                                              "priv-operator", "priv-user"};
+
+     /** @brief groups manager container */
+     std::vector<std::string> groupsMgr;
+--
+2.25.1
+
