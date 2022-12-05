@@ -166,6 +166,48 @@
     ]
   },
   {
+    "name": "high_speed_on_missing_service",
+    "groups": [
+      {
+         "name": "zone0_cores",
+          "interface": "xyz.openbmc_project.Sensor.Value",
+          "property": { "name": "Value" }
+       }
+    ],
+    "triggers": [
+       {
+          "class": "init",
+          "method": "name_has_owner"
+        },
+        {
+           "class": "signal",
+           "signal": "name_owner_changed"
+        }
+    ],
+    "actions": [
+       {
+          "name": "call_actions_based_on_timer",
+          "timer": {
+             "interval": 5000000,
+             "type": "oneshot"
+          },
+          "actions": [
+             {
+                "name": "set_target_on_missing_owner",
+                "groups": [
+                   {
+                      "name": "zone0_cores",
+                      "interface": "xyz.openbmc_project.Sensor.Value",
+                      "property": { "name": "Value" }
+                   }
+                ],
+                "target": 255
+              }
+           ]
+        }
+     ]
+  },
+  {
     "name": "target_mapping_from_TS_temp",
     "groups": [
       {

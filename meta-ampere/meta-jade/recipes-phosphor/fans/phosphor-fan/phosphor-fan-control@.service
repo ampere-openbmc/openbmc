@@ -6,7 +6,7 @@ StartLimitIntervalSec=30
 StartLimitBurst=3
 
 [Service]
-Restart=on-failure
-ExecStart=phosphor-fan-control
+Restart=always
+ExecStart=-phosphor-fan-control
 RestartSec=20
 ExecStopPost=/usr/bin/ampere_set_fan_max_speed.sh
