@@ -1,0 +1,43 @@
+From 2a2702f8c7c8b19bfb957b9e6f9bfd9c07f90231 Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Wed, 7 Dec 2022 11:50:18 +0000
+Subject: [PATCH] Prevent non-admin user access console
+
+Adding a check so that only admin users are allowed to access to a BMC
+command shell via BMC's serial console. And non-admin user will be
+logged off.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ user_mgr.cpp | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/user_mgr.cpp b/user_mgr.cpp
+index 4a44b32..69cb329 100644
+--- a/user_mgr.cpp
++++ b/user_mgr.cpp
+@@ -307,7 +307,8 @@ void UserMgr::createUser(std::string userName,
+     throwForMaxGrpUserCount(groupNames);
+
+     std::string groups = getCSVFromVector(groupNames);
+-    bool sshRequested = removeStringFromCSV(groups, grpSsh);
++    removeStringFromCSV(groups, grpSsh);
++    bool sshRequested = (priv == "priv-admin");
+
+     // treat privilege as a group - This is to avoid using different file to
+     // store the same.
+@@ -434,7 +435,8 @@ void UserMgr::updateGroupsAndPriv(const std::string& userName,
+     }
+
+     std::string groups = getCSVFromVector(groupNames);
+-    bool sshRequested = removeStringFromCSV(groups, grpSsh);
++    removeStringFromCSV(groups, grpSsh);
++    bool sshRequested = (priv == "priv-admin");
+
+     // treat privilege as a group - This is to avoid using different file to
+     // store the same.
+--
+2.25.1
+
