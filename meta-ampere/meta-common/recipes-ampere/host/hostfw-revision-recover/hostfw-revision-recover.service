@@ -1,0 +1,12 @@
+[Unit]
+Description=Ampere Recover Host Firmware Revision
+After=xyz.openbmc_project.Software.BMC.Updater.service
+
+[Service]
+Type=simple
+Restart=on-failure
+ExecStart=/usr/sbin/ampere_hostfw_revision_recover.sh
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target
