@@ -1,0 +1,68 @@
+From aa7f7c960f774bc20b73632111a18a1ccef7d6a7 Mon Sep 17 00:00:00 2001
+From: Chanh Nguyen <chanh@os.amperecomputing.com>
+Date: Sat, 18 May 2024 16:08:30 +0000
+Subject: [PATCH] timedate: Remove RTC sync down in SetTime method
+
+If the system time is set with the SetTime method, the RTC
+will be updated as well.
+
+This commit will prevent that by default (because the
+sync-down-hwclock is false by default), the RTC will not
+be updated when the SetTime method is called.
+
+Upstream-Status: Pending
+
+Signed-off-by: Chanh Nguyen <chanh@os.amperecomputing.com>
+---
+ meson.build              | 2 +-
+ meson_options.txt        | 2 ++
+ src/timedate/timedated.c | 4 ++--
+ 3 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/meson.build b/meson.build
+index 187e7b216d..97dcb32063 100644
+--- a/meson.build
++++ b/meson.build
+@@ -290,7 +290,7 @@ conf.set('DEFAULT_USER_TIMEOUT_SEC',                          get_option('defaul
+ conf.set('UPDATE_HELPER_USER_TIMEOUT_SEC',                    get_option('update-helper-user-timeout-sec'))
+ 
+ conf.set10('ENABLE_FIRST_BOOT_FULL_PRESET',                   get_option('first-boot-full-preset'))
+-
++conf.set10('SYNC_DOWN_HWCLOCK',                               get_option('sync-down-hwclock'))
+ #####################################################################
+ 
+ cc = meson.get_compiler('c')
+diff --git a/meson_options.txt b/meson_options.txt
+index 414b0345d1..441eb0c45e 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -514,3 +514,5 @@ option('bpf-compiler', type : 'combo', choices : ['clang', 'gcc'],
+     description: 'compiler used to build BPF programs')
+ option('bpf-framework', type : 'feature', deprecated : { 'true' : 'enabled', 'false' : 'disabled' },
+     description: 'build BPF programs from source code in restricted C')
++option('sync-down-hwclock', type : 'boolean', value : false,
++       description : 'sync down hwclock')
+diff --git a/src/timedate/timedated.c b/src/timedate/timedated.c
+index c7be30f563..c66426cd73 100644
+--- a/src/timedate/timedated.c
++++ b/src/timedate/timedated.c
+@@ -887,14 +887,14 @@ static int method_set_time(sd_bus_message *m, void *userdata, sd_bus_error *erro
+                 log_error_errno(errno, "Failed to set local time: %m");
+                 return sd_bus_error_set_errnof(error, errno, "Failed to set local time: %m");
+         }
+-
++#if SYNC_DOWN_HWCLOCK
+         /* Sync down to RTC */
+         localtime_or_gmtime_r(&ts.tv_sec, &tm, !c->local_rtc);
+ 
+         r = clock_set_hwclock(&tm);
+         if (r < 0)
+                 log_debug_errno(r, "Failed to update hardware clock, ignoring: %m");
+-
++#endif
+         log_struct(LOG_INFO,
+                    "MESSAGE_ID=" SD_MESSAGE_TIME_CHANGE_STR,
+                    "REALTIME="USEC_FMT, timespec_load(&ts),
+-- 
+2.43.0
+
