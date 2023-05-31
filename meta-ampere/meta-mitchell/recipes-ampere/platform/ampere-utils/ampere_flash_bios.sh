@@ -158,12 +158,47 @@ if [[ $SPECIAL_BOOT == 1 ]]; then
 		sleep 0.5
 		cnt=$((cnt - 1))
 	done
+	if [[ "$cnt" == "0" ]]; then
+		echo "========================================="
+		echo "=                                       ="
+		echo "=   ERROR: FW_BOOT_OK IS NOT ASSERTED   ="
+		echo "=                                       ="
+		echo "========================================="
+	else
+		# 3s time out in wait for sys-auth-failure
+		cnt=6
+		while [ $cnt -gt 0 ];
+		do
+			# Monitor SYS_AUTH_FAILURE gpio
+			# The /tmp/secprov file is created when SYS_AUTH_FAILURE is asserted.
+			if [[ -f /tmp/secprov ]]; then
+				echo "============================="
+				echo "=                           ="
+				echo "=   ERROR: SECPROV FAILED   ="
+				echo "=                           ="
+				echo "============================="
+				break
+			fi
+			sleep 0.5
+			cnt=$((cnt - 1))
+		done
+
+		if [[ ! -f /tmp/secprov ]]; then
+			echo "======================================================================"
+			echo "=                                                                    ="
+			echo "=   SECPROV IS SUCCESSFUL, PLEASE RE-INSTALL THE NORMAL BOOT IMAGE   ="
+			echo "=                                                                    ="
+			echo "======================================================================"
+		fi
+	fi
 
 	echo "--- Turning the Chassis off"
 	obmcutil chassisoff
 
 	# Deassert SPECIAL_BOOT GPIO PIN
 	gpioset $(gpiofind host0-special-boot)=0
+
+	rm -f /tmp/secprov
 
 	sleep 10
 	# Recover HOST BOOTCOUNT to default
