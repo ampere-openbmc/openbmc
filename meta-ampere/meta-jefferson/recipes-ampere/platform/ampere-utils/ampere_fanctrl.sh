@@ -1,8 +1,25 @@
 #!/bin/bash
 # shellcheck disable=SC2004
 
+fan_ctrl_bus=0x08
+fan_ctrl_addr=0x5c
+
+adt7462_reg_cfg1=0x01
+adt7462_reg_cfg2=0x02
+adt7462_reg_tach_enable=0x07
+adt7462_reg_pwm_cfg=0x21
+adt7462_reg_max_pwm=0x2c
+
+adt7462_high_freq_mode=0x04
+adt7462_setup_complete=0x20
+adt7462_bhvr_manual_mode=0xe0
+adt7462_tach_enable=0xff
+adt7462_max_pwm=0xff
+fan_nums=4
+
 fan_hwmon_num=$(ls /sys/bus/i2c/drivers/adt7462/8-005c/hwmon)
 fan_hwmon_path="/sys/class/hwmon/$fan_hwmon_num"
+adt7462_bus_addr="8-005c"
 
 phosphor_fan_service=("phosphor-fan-control@0.service"
                       "phosphor-fan-monitor@0.service"
@@ -40,6 +57,39 @@ function start_phosphor_fan_services() {
         fi
         systemctl start "$service"
     done
+}
+
+function fan_controller_init() {
+    # Check the ADT7462 driver binded before
+    ADT7462=/sys/bus/i2c/drivers/adt7462/"$adt7462_bus_addr"
+    if [ -d "$ADT7462" ]; then
+        echo "Unbind the ADT7462 driver"
+        echo "$adt7462_bus_addr" > /sys/bus/i2c/drivers/adt7462/unbind
+        sleep 1
+    fi
+    # Set Maximum PWM duty cycle
+    i2cset -f -y $fan_ctrl_bus $fan_ctrl_addr $adt7462_reg_max_pwm $adt7462_max_pwm
+    # Set High frequency mode
+    val=$(i2cget -f -y $fan_ctrl_bus $fan_ctrl_addr $adt7462_reg_cfg2)
+    val=$(($val | $adt7462_high_freq_mode))
+    i2cset -f -y $fan_ctrl_bus $fan_ctrl_addr $adt7462_reg_cfg2 $val
+    # Enable TACH
+    i2cset -f -y $fan_ctrl_bus $fan_ctrl_addr $adt7462_reg_tach_enable $adt7462_tach_enable
+    # Set PWM Manual mode
+    for i in $(seq 0 $((fan_nums - 1)))
+    do
+        reg_pwm_cfg=$(($adt7462_reg_pwm_cfg + $i))
+        val=$(i2cget -f -y $fan_ctrl_bus $fan_ctrl_addr $reg_pwm_cfg)
+        val=$(($val | $adt7462_bhvr_manual_mode))
+        i2cset -f -y $fan_ctrl_bus $fan_ctrl_addr $reg_pwm_cfg $val
+    done
+    # Setup complete
+    val=$(i2cget -f -y $fan_ctrl_bus $fan_ctrl_addr $adt7462_reg_cfg1)
+    val=$(($val | $adt7462_setup_complete))
+    i2cset -f -y $fan_ctrl_bus $fan_ctrl_addr $adt7462_reg_cfg1 $val
+    # Bind ADT7462 driver
+    echo "Bind the ADT7462 driver"
+    echo "$adt7462_bus_addr" > /sys/bus/i2c/drivers/adt7462/bind
 }
 
 function getstatus() {
