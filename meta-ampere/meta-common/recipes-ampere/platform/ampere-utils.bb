@@ -4,11 +4,15 @@ PR = "r1"
 LICENSE = "Apache-2.0"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/Apache-2.0;md5=89aea4e17d99a7cacdbeed46a0096b10"
 
+S = "${WORKDIR}/sources"
+UNPACKDIR = "${S}"
+
 SRC_URI = " \
            file://ampere_add_redfishevent.sh \
            file://ampere_spi_util.sh \
            file://ampere_power_control_lock.sh \
            file://utils-lib.sh \
+           file://ampere_utils \
           "
 
 RDEPENDS:${PN} = "bash"
@@ -19,4 +23,5 @@ do_install() {
     install -m 0755 ${UNPACKDIR}/ampere_spi_util.sh ${D}/${sbindir}/
     install -m 0755 ${UNPACKDIR}/ampere_power_control_lock.sh ${D}/${sbindir}/
     install -m 0755 ${UNPACKDIR}/utils-lib.sh ${D}/${sbindir}/
+    install -m 0755 ${UNPACKDIR}/ampere_utils ${D}/${sbindir}/
 }
