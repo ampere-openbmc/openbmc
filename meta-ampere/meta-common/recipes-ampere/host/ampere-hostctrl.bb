@@ -15,6 +15,7 @@ SRC_URI = " \
            file://ampere-host-force-reset@.service \
            file://ampere-host-on-host-check@.service \
            file://ampere_host_check.sh \
+           file://ampere-host-is-running.service \
            file://obmc-power-already-on@.target \
            file://obmc-host-already-on@.target \
            file://ampere-bmc-reboot-host-check@.service \
@@ -23,6 +24,7 @@ SRC_URI = " \
 SYSTEMD_PACKAGES = "${PN}"
 SYSTEMD_SERVICE:${PN} = " \
                          ampere-host-force-reset@.service \
+                         ampere-host-is-running.service \
                          obmc-power-already-on@.target \
                          obmc-host-already-on@.target \
                          ampere-bmc-reboot-host-check@.service \
@@ -57,6 +59,12 @@ HOST_CHECK_BMC_REBOOT_HOSTINSTMPL = "ampere-bmc-reboot-host-check@{0}.service"
 HOST_CHECK_BMC_REBOOT_HOSTTGTFMT = "obmc-chassis-poweron@{0}.target"
 HOST_CHECK_BMC_REBOOT_HOSTFMT = "../${HOST_CHECK_BMC_REBOOT_HOSTTMPL}:${HOST_CHECK_BMC_REBOOT_HOSTTGTFMT}.requires/${HOST_CHECK_BMC_REBOOT_HOSTINSTMPL}"
 SYSTEMD_LINK:${PN} += "${@compose_list_zip(d, 'HOST_CHECK_BMC_REBOOT_HOSTFMT', 'OBMC_HOST_INSTANCES')}"
+
+HOST_ON_TGT = "ampere-host-is-running.service"
+HOST_ON_INSTMPL = "ampere-host-is-running.service"
+AMPER_HOST_RUNNING = "obmc-host-already-on@{0}.target"
+HOST_ON_TARGET_FMT = "../${HOST_ON_TGT}:${AMPER_HOST_RUNNING}.wants/${HOST_ON_INSTMPL}"
+SYSTEMD_LINK:${PN} += "${@compose_list_zip(d, 'HOST_ON_TARGET_FMT', 'OBMC_HOST_INSTANCES')}"
 
 do_install() {
     install -d ${D}/usr/sbin

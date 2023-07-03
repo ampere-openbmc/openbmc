@@ -1,0 +1,11 @@
+[Unit]
+Description=Ampere Host is running handler
+After=obmc-host-already-on@0.target
+BindTo=obmc-host-already-on@0.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c "if [[ -f "/usr/sbin/ampere_utils" ]]; then ampere_utils host state on; fi"
+ExecStop=/bin/sh -c "if [[ -f "/usr/sbin/ampere_utils" ]]; then ampere_utils host state go-to-off; fi"
+
