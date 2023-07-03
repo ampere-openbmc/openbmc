@@ -1,0 +1,81 @@
+#!/bin/bash
+# ampere_utils is ampere utilities platform scripts
+# Usage:
+# ampere_utils host state on/go-to-off
+# ampere_utils host present s0/s1
+
+# shellcheck disable=SC2046
+# shellcheck source=meta-ampere/meta-common/recipes-ampere/platform/ampere-utils/utils-lib.sh
+source /usr/sbin/utils-lib.sh
+
+ERR_SUCCESS="0"
+ERR_FAILURE="1"
+
+function is_host_going_to_off()
+{
+	cc="false"
+	cnt=5
+	outMsg=""
+	while [ $cnt -gt 0 ];
+	do
+		st=$(busctl call xyz.openbmc_project.State.Host \
+				/xyz/openbmc_project/state/host0 org.freedesktop.DBus.Properties \
+				Get ss xyz.openbmc_project.State.Host \
+				CurrentHostState | cut -d"." -f6)
+		if [[ "$st" != "Running\"" ]]; then
+			# In bmc reboot the host state will change from Running to empty
+			if [[ "$st" != "" ]]; then
+				cc="true"
+			fi
+			break
+		fi
+		sleep 1
+		cnt=$((cnt - 1))
+	done
+	echo "$cc"
+}
+
+function host_present_handler()
+{
+	cc=$ERR_FAILURE
+	if [ "$1" == "s1" ]; then
+		cc=$(sx_present 1)
+	elif [ "$1" == "s0" ]; then
+		cc=$(sx_present 0)
+	fi
+	echo "$cc"
+}
+
+function host_state_handler()
+{
+	cc=$ERR_FAILURE
+	if [ "$1" == "go-to-off" ]; then
+		st=$(is_host_going_to_off)
+		if [ "$st" == "true" ]; then
+			busctl set-property xyz.openbmc_project.LED.GroupManager \
+				/xyz/openbmc_project/led/groups/ras_ue_fault \
+				xyz.openbmc_project.Led.Group Asserted b false
+			rm -rf /tmp/gpio_fault
+			cc=$ERR_SUCCESS
+		fi
+	fi
+	echo "$cc"
+}
+
+function host_action_handler()
+{
+	cc=$ERR_FAILURE
+	if [ "$1" == "state" ]; then
+		cc=$(host_state_handler "$2")
+	elif [ "$1" == "present" ]; then
+		cc=$(host_present_handler "$2")
+	fi
+	echo "$cc"
+}
+
+if [ "$1" == "host" ]; then
+	cc=$(host_action_handler "$2" "$3")
+	echo "$cc"
+fi
+
+exit 0
