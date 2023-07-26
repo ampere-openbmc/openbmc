@@ -1,0 +1,409 @@
+From 9937037c3604fc7a0b6c3c63144fb0cc40f1d966 Mon Sep 17 00:00:00 2001
+From: Chanh Nguyen <chanh@os.amperecomputing.com>
+Date: Fri, 17 May 2024 14:49:49 +0700
+Subject: [PATCH 4/4] cmd: fru: support fru get command
+
+This patch adds the "fru get" command.
+
+The "fru get" command stores a corresponded field of the
+board, chassis, product area into memory.
+
+The "fru get" command stores a multirecord area, which
+corresponds to the Record Type ID in memory.
+
+Upstream-Status: Pending
+
+Signed-off-by: Chanh Nguyen <chanh@os.amperecomputing.com>
+---
+ cmd/fru.c        | 106 +++++++++++++++++++++-
+ common/fru_ops.c | 230 +++++++++++++++++++++++++++++++++++++++++++++++
+ include/fru.h    |   4 +
+ 3 files changed, 339 insertions(+), 1 deletion(-)
+
+diff --git a/cmd/fru.c b/cmd/fru.c
+index d5e96cfe89..339b075d1d 100644
+--- a/cmd/fru.c
++++ b/cmd/fru.c
+@@ -31,9 +31,78 @@ static int do_fru_display(cmd_tbl_t *cmdtp, int flag, int argc,
+ 	return CMD_RET_SUCCESS;
+ }
+
++static int do_fru_get(cmd_tbl_t *cmdtp, int flag, int argc,
++			  char *const argv[])
++{
++	u8 mrc_id, field_id;
++	u32 addr_dest;
++	char *endp;
++	char *arg = (char *)argv[2];
++
++	switch (*arg) {
++		case 'm':
++				mrc_id = simple_strtoul(argv[3], &endp, 16);
++				if (*endp != 0)
++					return -1;
++
++				addr_dest = simple_strtoul(argv[4], &endp, 16);
++				if (*endp != 0)
++					return -1;
++
++				if (fru_get_multirec(mrc_id, addr_dest))
++					return -1;
++
++				break;
++		case 'b':
++				field_id = simple_strtoul(argv[3], &endp, 16);
++				if (*endp != 0)
++					return -1;
++
++				addr_dest = simple_strtoul(argv[4], &endp, 16);
++				if (*endp != 0)
++					return -1;
++
++				if (fru_get_board(field_id, addr_dest))
++					return -1;
++
++				break;
++		case 'c':
++				field_id = simple_strtoul(argv[3], &endp, 16);
++				if (*endp != 0)
++					return -1;
++
++				addr_dest = simple_strtoul(argv[4], &endp, 16);
++				if (*endp != 0)
++					return -1;
++
++				if (fru_get_chassis(field_id, addr_dest))
++					return -1;
++
++				break;
++		case 'p':
++				field_id = simple_strtoul(argv[3], &endp, 16);
++				if (*endp != 0)
++					return -1;
++
++				addr_dest = simple_strtoul(argv[4], &endp, 16);
++				if (*endp != 0)
++					return -1;
++
++				if (fru_get_product(field_id, addr_dest))
++					return -1;
++
++				break;
++		default:
++				return -1;
++	}
++
++	return CMD_RET_SUCCESS;
++}
++
+ static cmd_tbl_t cmd_fru_sub[] = {
+ 	U_BOOT_CMD_MKENT(capture, 3, 0, do_fru_capture, "", ""),
+ 	U_BOOT_CMD_MKENT(display, 2, 0, do_fru_display, "", ""),
++	U_BOOT_CMD_MKENT(get, 5, 0, do_fru_get, "", ""),
+ };
+
+ static int do_fru(cmd_tbl_t *cmdtp, int flag, int argc,
+@@ -58,11 +127,46 @@ static char fru_help_text[] =
+ 	"capture <addr> - Parse and capture FRU table present at address.\n"
+ 	"fru display - Displays content of FRU table that was captured using\n"
+ 	"              fru capture command\n"
++	"fru get <area> <field> <addr> - read to memory\n"
++	"    <area> : 'b' -> Board \n"
++	"             'c' -> Chassis \n"
++	"             'p' -> Product \n"
++	"             'm' -> Multi record \n"
++	"    <field> :\n"
++	"        If <area> is 'b' \n"
++	"              'manufacturer name' : <field> = 0\n"
++	"              'product' :           <field> = 1\n"
++	"              'serial' :            <field> = 2\n"
++	"              'part_number' :       <field> = 3\n"
++	"              'fru file id' :       <field> = 4\n"
++	"              'Custom field 1' :    <field> = 5\n"
++	"              'Custom field 2' :    <field> = 6\n"
++	"              'Custom field 3' :    <field> = 7\n"
++	"        If <area> is 'c' \n"
++	"              'type' :              <field> = 0\n"
++	"              'part_number' :       <field> = 1\n"
++	"              'serial' :            <field> = 2\n"
++	"              'Custom field 1' :    <field> = 3\n"
++	"              'Custom field 2' :    <field> = 4\n"
++	"              'Custom field 3' :    <field> = 5\n"
++	"        If <area> is 'p' \n"
++	"              'manufacturer name' : <field> = 0\n"
++	"              'product name' :      <field> = 1\n"
++	"              'part model number' : <field> = 2\n"
++	"              'version number' :    <field> = 3\n"
++	"              'serial number' :     <field> = 4\n"
++	"              'assert tag' :        <field> = 5\n"
++	"              'fru file id' :       <field> = 6\n"
++	"              'Custom field 1' :    <field> = 7\n"
++	"              'Custom field 2' :    <field> = 8\n"
++	"              'Custom field 3' :    <field> = 9\n"
++	"        If <area> is 'm', <field> is a Record ID\n"
++	"    <addr> is address that will store the FRU field\n"
+ 	;
+ #endif
+
+ U_BOOT_CMD(
+-	fru, 3, 1, do_fru,
++	fru, 5, 1, do_fru,
+ 	"FRU table info",
+ 	fru_help_text
+ )
+diff --git a/common/fru_ops.c b/common/fru_ops.c
+index 76e23d4de1..c0eef9569f 100644
+--- a/common/fru_ops.c
++++ b/common/fru_ops.c
+@@ -461,3 +461,233 @@ int fru_display(void)
+
+ 	return 0;
+ }
++
++int fru_get_custom_field(u8 *data, u8 custom_id )
++{
++	for (int i = 1; ; i++)
++	{
++		if (*data == FRU_TYPELEN_EOF) {
++			return 0;
++		}
++
++		if (i == custom_id) {
++			return (int)data;
++		}
++
++		data += ((*data & FRU_TYPELEN_LEN_MASK) + 1);
++	}
++}
++
++int fru_get_board(u8 field_id, u32 addr_dest)
++{
++	if (!fru_data.captured) {
++		printf("FRU data not available please run fru parse\n");
++		return -EINVAL;
++	}
++
++	switch (field_id) {
++		case 0:
++			memcpy((void *)addr_dest,
++					 (void *)&fru_data.brd.manufacturer_name[0],
++					  fru_data.brd.manufacturer_type_len
++					   & FRU_TYPELEN_LEN_MASK);
++			break;
++		case 1:
++			memcpy((void *)addr_dest,
++					 (void *)&fru_data.brd.product_name[0],
++					  fru_data.brd.product_name_type_len
++					   & FRU_TYPELEN_LEN_MASK);
++			break;
++		case 2:
++			memcpy((void *)addr_dest,
++					 (void *)&fru_data.brd.serial_number[0],
++					  fru_data.brd.serial_number_type_len
++					   & FRU_TYPELEN_LEN_MASK);
++			break;
++		case 3:
++			memcpy((void *)addr_dest,
++					 (void *)&fru_data.brd.part_number[0],
++					  fru_data.brd.part_number_type_len
++					   & FRU_TYPELEN_LEN_MASK);
++			break;
++		case 4:
++			memcpy((void *)addr_dest,
++					 (void *)&fru_data.brd.file_id[0],
++					  fru_data.brd.file_id_type_len
++					   & FRU_TYPELEN_LEN_MASK);
++			break;
++		case 5:
++		case 6:
++		case 7:
++			if (fru_data.brd.custom_addr) {
++				u32 src_addr = fru_get_custom_field(
++									(u8 *)fru_data.brd.custom_addr ,
++									 field_id - 4);
++				if (!src_addr)
++				{
++					printf("Board custom field (%d) does not exist\n",
++							 field_id - 4);
++					return -1;
++				}
++				u8 len = *(u8 *)src_addr & FRU_TYPELEN_LEN_MASK;
++				memcpy((void *)addr_dest, (void *)src_addr + 1, len);
++			} else {
++				printf("Board custom field does not exist\n");
++				return -1;
++			}
++			break;
++		default:
++			printf("FRU field (%d) does not exist\n", field_id);
++			return -1;
++	}
++
++	return 0;
++}
++
++int fru_get_chassis(u8 field_id, u32 addr_dest)
++{
++	if (!fru_data.captured) {
++		printf("FRU data not available please run fru parse\n");
++		return -EINVAL;
++	}
++
++	switch (field_id) {
++		case 0:
++			memcpy((void *)addr_dest, (void *)&fru_data.chs.type, 1);
++			break;
++		case 1:
++			memcpy((void *)addr_dest,
++					 (void *)&fru_data.chs.part_number[0],
++					  fru_data.chs.part_number_type_len
++					   & FRU_TYPELEN_LEN_MASK);
++			break;
++		case 2:
++			memcpy((void *)addr_dest,
++					 (void *)&fru_data.chs.serial_number[0],
++					  fru_data.chs.serial_number_type_len
++					   & FRU_TYPELEN_LEN_MASK);
++			break;
++		case 3:
++		case 4:
++		case 5:
++			if (fru_data.chs.custom_addr) {
++				u32 src_addr = fru_get_custom_field(
++									(u8 *)fru_data.chs.custom_addr ,
++									 field_id - 2);
++				if (!src_addr)
++				{
++					printf("Chassis custom field (%d) does not exist\n",
++							 field_id - 2);
++					return -1;
++				}
++				u8 len = *(u8 *)src_addr & FRU_TYPELEN_LEN_MASK;
++				memcpy((void *)addr_dest, (void *)src_addr + 1, len);
++			} else {
++				printf("Chassis custom field does not exist\n");
++				return -1;
++			}
++			break;
++		default:
++			printf("FRU field (%d) does not exist\n", field_id);
++			return -1;
++	}
++
++	return 0;
++}
++
++int fru_get_product(u8 field_id, u32 addr_dest)
++{
++	if (!fru_data.captured) {
++		printf("FRU data not available please run fru parse\n");
++		return -EINVAL;
++	}
++
++	switch (field_id) {
++		case 0:
++			memcpy((void *)addr_dest,
++					 (void *)&fru_data.prod.manufacturer_name[0],
++					  fru_data.prod.manufacturer_type_len
++					   & FRU_TYPELEN_LEN_MASK);
++			break;
++		case 1:
++			memcpy((void *)addr_dest,
++					 (void *)&fru_data.prod.product_name[0],
++					  fru_data.prod.product_name_type_len
++					   & FRU_TYPELEN_LEN_MASK);
++			break;
++		case 2:
++			memcpy((void *)addr_dest,
++					 (void *)&fru_data.prod.part_model_number[0],
++					  fru_data.prod.part_model_number_type_len
++					   & FRU_TYPELEN_LEN_MASK);
++			break;
++		case 3:
++			memcpy((void *)addr_dest,
++					 (void *)&fru_data.prod.version_number[0],
++					  fru_data.prod.version_number_type_len
++					   & FRU_TYPELEN_LEN_MASK);
++			break;
++		case 4:
++			memcpy((void *)addr_dest,
++					 (void *)&fru_data.prod.serial_number[0],
++					  fru_data.prod.serial_number_type_len
++					   & FRU_TYPELEN_LEN_MASK);
++			break;
++		case 5:
++			memcpy((void *)addr_dest,
++					 (void *)&fru_data.prod.assert_tag[0],
++					  fru_data.prod.assert_tag_type_len
++					   & FRU_TYPELEN_LEN_MASK);
++			break;
++		case 6:
++			memcpy((void *)addr_dest,
++					 (void *)&fru_data.prod.file_id[0],
++					  fru_data.prod.file_id_type_len
++					   & FRU_TYPELEN_LEN_MASK);
++			break;
++		case 7:
++		case 8:
++		case 9:
++			if (fru_data.prod.custom_addr) {
++				u32 src_addr = fru_get_custom_field(
++									(u8 *)fru_data.prod.custom_addr ,
++									 field_id - 6);
++				if (!src_addr)
++				{
++					printf("Product custom field (%d) does not exist\n",
++							 field_id - 6);
++					return -1;
++				}
++				u8 len = *(u8 *)src_addr & FRU_TYPELEN_LEN_MASK;
++				memcpy((void *)addr_dest, (void *)src_addr + 1, len);
++			} else {
++				printf("Product custom field does not exist\n");
++				return -1;
++			}
++			break;
++		default:
++			printf("FRU field (%d) does not exist\n", field_id);
++			return -1;
++	}
++
++	return 0;
++}
++
++int fru_get_multirec(u8 mrc_id, u32 addr_dest)
++{
++	struct fru_multirec_hdr mrc;
++	u8 hdr_len = sizeof(struct fru_multirec_hdr);
++	u32 addr = fru_data.mrc_addr;
++
++	do {
++		memcpy(&mrc.rec_type, (void *)addr, hdr_len);
++		if (mrc.rec_type == mrc_id) {
++			memcpy((void *)addr_dest, (void *)(addr + hdr_len), mrc.len);
++			return 0;
++		}
++		addr += mrc.len + hdr_len;
++	} while (!(mrc.type & FRU_LAST_REC));
++
++	printf("MultiRecord Type ID 0x%x does not exist\n",mrc_id);
++	return -EINVAL;
++}
+diff --git a/include/fru.h b/include/fru.h
+index 9f1ea0e82e..5743001dec 100644
+--- a/include/fru.h
++++ b/include/fru.h
+@@ -105,6 +105,10 @@ struct fru_table {
+
+ int fru_display(void);
+ int fru_capture(unsigned long addr);
++int fru_get_board(u8 field_id, u32 addr_dest);
++int fru_get_chassis(u8 field_id, u32 addr_dest);
++int fru_get_product(u8 field_id, u32 addr_dest);
++int fru_get_multirec(u8 mrc_id, u32 addr_dest);
+
+ extern struct fru_table fru_data;
+
+--
+2.34.1
+
