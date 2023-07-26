@@ -1,0 +1,508 @@
+From fe58da517de740767cd039d24eb85cfb20b20af0 Mon Sep 17 00:00:00 2001
+From: Chanh Nguyen <chanh@os.amperecomputing.com>
+Date: Fri, 17 May 2024 14:49:14 +0700
+Subject: [PATCH 3/4] cmd: fru: add product, chassis and multirecord area
+
+This patch adds support for the "fru capture"
+and "fru display" command for the product,
+chassis and multirecord areas.
+
+Upstream-Status: Pending
+
+Signed-off-by: Chanh Nguyen <chanh@os.amperecomputing.com>
+---
+ common/fru_ops.c | 313 ++++++++++++++++++++++++++++++++++++++++-------
+ include/fru.h    |  68 ++++++++++
+ 2 files changed, 334 insertions(+), 47 deletions(-)
+
+diff --git a/common/fru_ops.c b/common/fru_ops.c
+index 78f266d060..76e23d4de1 100644
+--- a/common/fru_ops.c
++++ b/common/fru_ops.c
+@@ -61,45 +61,147 @@ static int fru_parse_board(unsigned long addr)
+ {
+ 	u8 i, type;
+ 	int len;
+-	u8 *data, *term;
++	u8 *data;
+
+ 	memcpy(&fru_data.brd.ver, (void *)addr, 6);
+ 	addr += 6;
+ 	data = (u8 *)&fru_data.brd.manufacturer_type_len;
+
+-	for (i = 0; ; i++, data += FRU_FIELD_MAX_LEN) {
+-		*data++ = *(u8 *)addr;
++	for (i = 0; i < FRU_BOARD_AREA_TOTAL_FIELDS;
++			 i++, data += FRU_FIELD_MAX_LEN) {
+ 		len = fru_check_type_len(*(u8 *)addr, &type);
+ 		/*
+ 		 * Stop cature if it end of fields
+ 		 */
+ 		if (len == -EINVAL)
+-			break;
++		{
++			printf("Board area require minimum %d fields\n",
++					 FRU_BOARD_AREA_TOTAL_FIELDS);
++			return -EINVAL;
++		}
++		*data++ = *(u8 *)addr;
++		addr += 1;
++		if (!len)
++			continue;
++		memcpy(data, (u8 *)addr, len);
++		addr += len;
++	}
++
++	/*
++	 * Check the custom field
++	 */
++	if (*(u8 *)addr != FRU_TYPELEN_EOF) {
++			fru_data.brd.custom_addr = addr;
++	}
++
++	return 0;
++}
++
++static int fru_parse_chassis(unsigned long addr)
++{
++	u8 i, type;
++	int len;
++	u8 *data;
++
++	memcpy(&fru_data.chs.ver, (void *)addr, 3);
++	addr += 3;
++	data = (u8 *)&fru_data.chs.part_number_type_len;
+
++	for (i = 0; i < FRU_CHASSIS_AREA_TOTAL_FIELDS;
++			 i++, data += FRU_FIELD_MAX_LEN) {
++		len = fru_check_type_len(*(u8 *)addr, &type);
+ 		/*
+-		 * Dont capture data if type is not ASCII8
++		 * Stop cature if it end of fields
+ 		 */
+-		if (type != FRU_TYPELEN_TYPE_ASCII8)
+-			return 0;
++		if (len == -EINVAL)
++		{
++			printf("Chassis area require minimum %d fields\n",
++					 FRU_CHASSIS_AREA_TOTAL_FIELDS);
++			return -EINVAL;
++		}
++		*data++ = *(u8 *)addr;
++		addr += 1;
++		if (!len)
++			continue;
++		memcpy(data, (u8 *)addr, len);
++		addr += len;
++	}
++
++	/*
++	 * Check the custom field
++	 */
++	if (*(u8 *)addr != FRU_TYPELEN_EOF) {
++			fru_data.chs.custom_addr = addr;
++	}
++
++	return 0;
++}
++
++static int fru_parse_product(unsigned long addr)
++{
++	u8 i, type;
++	int len;
++	u8 *data;
+
++	memcpy(&fru_data.prod.ver, (void *)addr, 3);
++	addr += 3;
++	data = (u8 *)&fru_data.prod.manufacturer_type_len;
++
++	for (i = 0; i < FRU_PRODUCT_AREA_TOTAL_FIELDS;
++			 i++, data += FRU_FIELD_MAX_LEN) {
++		len = fru_check_type_len(*(u8 *)addr, &type);
++		/*
++		 * Stop cature if it end of fields
++		 */
++		if (len == -EINVAL)
++		{
++			printf("Product area require minimum %d fields\n",
++					 FRU_PRODUCT_AREA_TOTAL_FIELDS);
++			return -EINVAL;
++		}
++		*data++ = *(u8 *)addr;
+ 		addr += 1;
+ 		if (!len)
+ 			continue;
+ 		memcpy(data, (u8 *)addr, len);
+-		term = data + (u8)len;
+-		*term = 0;
+ 		addr += len;
+ 	}
+
+-	if (i < FRU_BOARD_AREA_TOTAL_FIELDS) {
+-		printf("Board area require minimum %d fields\n",
+-		       FRU_BOARD_AREA_TOTAL_FIELDS);
+-		return -EINVAL;
++	/*
++	 * Check the custom field
++	 */
++	if (*(u8 *)addr != FRU_TYPELEN_EOF) {
++			fru_data.prod.custom_addr = addr;
+ 	}
+
+ 	return 0;
+ }
+
++static int fru_parse_multirec(unsigned long addr)
++{
++	struct fru_multirec_hdr mrc;
++	u8 checksum = 0;
++	u8 hdr_len = sizeof(struct fru_multirec_hdr);
++
++	fru_data.mrc_addr = addr;
++	debug("%s: multirec addr %lx\n", __func__, addr);
++
++	do {
++		memcpy(&mrc.rec_type, (void *)addr, hdr_len);
++
++		checksum = fru_checksum((u8 *)addr, hdr_len);
++		if (checksum) {
++			debug("%s header CRC error\n", __func__);
++			fru_data.mrc_addr = 0;
++			return -EINVAL;
++		}
++
++		addr += mrc.len + hdr_len;
++	} while (!(mrc.type & FRU_LAST_REC));
++
++	return 0;
++}
++
+ int fru_capture(unsigned long addr)
+ {
+ 	struct fru_common_hdr *hdr;
+@@ -123,24 +225,48 @@ int fru_capture(unsigned long addr)
+ 		fru_parse_board(addr + fru_cal_area_len(hdr->off_board));
+ 	}
+
++	if (hdr->off_chassis) {
++		fru_parse_chassis(addr + fru_cal_area_len(hdr->off_chassis));
++	}
++
++	if (hdr->off_product) {
++		fru_parse_product(addr + fru_cal_area_len(hdr->off_product));
++	}
++
++	if (hdr->off_multirec) {
++		fru_parse_multirec(addr + fru_cal_area_len(hdr->off_multirec));
++	}
++
+ 	env_set_hex("fru_addr", addr);
+
+ 	return 0;
+ }
+
++static void fru_display_custom_field(u8 *data)
++{
++	int len;
++	u8 type;
++
++	for (int i = 1; ; i++)
++	{
++		len = fru_check_type_len(*data++, &type);
++		/*
++		 * Stop cature if it end of fields
++		 */
++		if (len == -EINVAL)
++			break;
++		printf("Extra field %d: ", i);
++		while(len--)
++			printf("%c", *data++);
++		printf("\n");
++	}
++}
++
+ static int fru_display_board(void)
+ {
+ 	u32 time = 0;
+-	u8 type;
+-	int len;
+ 	u8 *data;
+-	const char *typecode[] = {
+-		"Binary/Unspecified",
+-		"BCD plus",
+-		"6-bit ASCII",
+-		"8-bit ASCII",
+-		"2-byte UNICODE"
+-	};
++
+ 	const char *boardinfo[] = {
+ 		"Manufacturer Name",
+ 		"Product Name",
+@@ -160,39 +286,121 @@ static int fru_display_board(void)
+ 	       fru_data.brd.time[0];
+ 	printf("Time in Minutes from 0:00hrs 1/1/96 %d\n", time);
+
+-	data = (u8 *)&fru_data.brd.manufacturer_type_len;
++	data = (u8 *)&fru_data.brd.manufacturer_name;
++	for (u8 i = 0; i < FRU_BOARD_AREA_TOTAL_FIELDS; i++,
++			 data += (FRU_FIELD_MAX_LEN +1)) {
++		printf("%s: %s\n", boardinfo[i], data);
++	}
+
+-	for (u8 i = 0; ; i++) {
+-		len = fru_check_type_len(*data++, &type);
+-		if (len == -EINVAL) {
+-			printf("**** EOF for Board Area ****\n");
+-			break;
+-		}
++	/*
++	 * Display custom field if exist
++	 */
++	if (fru_data.brd.custom_addr) {
++		fru_display_custom_field(
++			(u8 *)fru_data.brd.custom_addr);
++	}
+
+-		if (type <= FRU_TYPELEN_TYPE_ASCII8 &&
+-		    (fru_data.brd.lang_code == FRU_LANG_CODE_ENGLISH ||
+-		     fru_data.brd.lang_code == FRU_LANG_CODE_ENGLISH_1))
+-			printf("Type code: %s\n", typecode[type]);
+-		else
+-			printf("Type code: %s\n", typecode[type + 1]);
++	printf("**** EOF for Board Area ****\n");
+
+-		if (type != FRU_TYPELEN_TYPE_ASCII8) {
+-			printf("FRU_ERROR: Only ASCII8 type is supported\n");
+-			return 0;
+-		}
+-		if (!len) {
+-			printf("%s not found\n", boardinfo[i]);
+-			continue;
+-		}
++	return 0;
++}
+
+-		printf("Length: %d\n", len);
+-		printf("%s: %s\n", boardinfo[i], data);
+-		data += FRU_FIELD_MAX_LEN;
++static int fru_display_chassis(void)
++{
++	u8 *data;
++
++	const char *chassisinfo[] = {
++		"Part Number",
++		"Serial Number",
++	};
++
++	printf("*****CHASSIS INFO*****\n");
++	printf("Version: %d\n", fru_version(fru_data.chs.ver));
++	printf("Chassis Area Length: %d\n", fru_cal_area_len(fru_data.chs.len));
++	printf("Chassis Type: %s\n", chassis_type_desc[fru_data.chs.type >
++			(sizeof(chassis_type_desc)/sizeof(chassis_type_desc[0])) - 1 ?
++			2 : fru_data.chs.type]);
++
++	data = (u8 *)&fru_data.chs.part_number;
++	for (u8 i = 0; i < FRU_CHASSIS_AREA_TOTAL_FIELDS; i++,
++			 data += (FRU_FIELD_MAX_LEN +1)) {
++		printf("%s: %s\n", chassisinfo[i], data);
++	}
++
++	/*
++	 * Display custom field if exist
++	 */
++	if (fru_data.chs.custom_addr) {
++		fru_display_custom_field(
++			(u8 *)fru_data.chs.custom_addr);
++	}
++
++	printf("**** EOF for Chassis Area ****\n");
++
++	return 0;
++}
++
++static int fru_display_product(void)
++{
++	u8 *data;
++
++	const char *productinfo[] = {
++		"Manufacturer Name",
++		"Product Name",
++		"Part Number",
++		"Version Number",
++		"Serial Number",
++		"Assert Tag",
++		"File ID"
++	};
++
++	printf("*****PRODUCT INFO*****\n");
++	printf("Version:%d\n", fru_version(fru_data.prod.ver));
++	printf("Product Area Length:%d\n", fru_cal_area_len(fru_data.prod.len));
++
++	if (fru_check_language(fru_data.prod.lang_code))
++		return 0;
++
++	data = (u8 *)&fru_data.prod.manufacturer_name;
++	for (u8 i = 0; i < FRU_PRODUCT_AREA_TOTAL_FIELDS; i++,
++			 data += (FRU_FIELD_MAX_LEN +1)) {
++		printf("%s: %s\n", productinfo[i], data);
++	}
++
++	/*
++	 * Display custom field if exist
++	 */
++	if (fru_data.prod.custom_addr) {
++		fru_display_custom_field(
++			(u8 *)fru_data.prod.custom_addr);
+ 	}
+
++	printf("**** EOF for Product Area ****\n");
++
+ 	return 0;
+ }
+
++static void fru_display_multirec(void)
++{
++	struct fru_multirec_hdr mrc;
++	u8 hdr_len = sizeof(struct fru_multirec_hdr);
++	u32 addr = fru_data.mrc_addr;
++
++	debug("%s: multirec addr %x\n", __func__, addr);
++	printf("*****Multi Record INFO*****\n");
++
++	do {
++		memcpy(&mrc.rec_type, (void *)addr, hdr_len);
++		printf("Multi Record Type ID 0x%x \n", mrc.rec_type);
++		for (int i = 0; i < mrc.len; ++i)
++		{
++			printf("%x ", *((char *)(addr + hdr_len + i)));
++		}
++		printf("\n========\n");
++		addr += mrc.len + hdr_len;
++	} while (!(mrc.type & FRU_LAST_REC));
++}
++
+ static void fru_display_common_hdr(void)
+ {
+ 	struct fru_common_hdr *hdr = &fru_data.hdr;
+@@ -238,7 +446,18 @@ int fru_display(void)
+ 	}
+
+ 	fru_display_common_hdr();
+-	fru_display_board();
++
++	if (fru_data.hdr.off_board)
++		fru_display_board();
++
++	if (fru_data.hdr.off_chassis)
++		fru_display_chassis();
++
++	if (fru_data.hdr.off_product)
++		fru_display_product();
++
++	if (fru_data.hdr.off_multirec)
++		fru_display_multirec();
+
+ 	return 0;
+ }
+diff --git a/include/fru.h b/include/fru.h
+index 0c23a58464..9f1ea0e82e 100644
+--- a/include/fru.h
++++ b/include/fru.h
+@@ -35,11 +35,55 @@ struct fru_board_data {
+ 	u8 part_number[FRU_FIELD_MAX_LEN];
+ 	u8 file_id_type_len;
+ 	u8 file_id[FRU_FIELD_MAX_LEN];
++	u32 custom_addr;
++};
++
++struct fru_chassis_data {
++	u8 ver;
++	u8 len;
++	u8 type;
++	u8 part_number_type_len;
++	u8 part_number[FRU_FIELD_MAX_LEN];
++	u8 serial_number_type_len;
++	u8 serial_number[FRU_FIELD_MAX_LEN];
++	u32 custom_addr;
++};
++
++struct fru_product_data {
++	u8 ver;
++	u8 len;
++	u8 lang_code;
++	u8 manufacturer_type_len;
++	u8 manufacturer_name[FRU_FIELD_MAX_LEN];
++	u8 product_name_type_len;
++	u8 product_name[FRU_FIELD_MAX_LEN];
++	u8 part_model_number_type_len;
++	u8 part_model_number[FRU_FIELD_MAX_LEN];
++	u8 version_number_type_len;
++	u8 version_number[FRU_FIELD_MAX_LEN];
++	u8 serial_number_type_len;
++	u8 serial_number[FRU_FIELD_MAX_LEN];
++	u8 assert_tag_type_len;
++	u8 assert_tag[FRU_FIELD_MAX_LEN];
++	u8 file_id_type_len;
++	u8 file_id[FRU_FIELD_MAX_LEN];
++	u32 custom_addr;
++};
++
++struct fru_multirec_hdr {
++	u8 rec_type;
++	u8 type;
++	u8 len;
++	u8 csum;
++	u8 hdr_csum;
+ };
+
+ struct fru_table {
+ 	struct fru_common_hdr hdr;
+ 	struct fru_board_data brd;
++	struct fru_chassis_data chs;
++	struct fru_product_data prod;
++	u32 mrc_addr;
+ 	bool captured;
+ };
+
+@@ -50,9 +94,12 @@ struct fru_table {
+ #define FRU_LANG_CODE_ENGLISH		0
+ #define FRU_LANG_CODE_ENGLISH_1		25
+ #define FRU_TYPELEN_EOF			0xC1
++#define FRU_LAST_REC			BIT(7)
+
+ /* This should be minimum of fields */
+ #define FRU_BOARD_AREA_TOTAL_FIELDS	5
++#define FRU_CHASSIS_AREA_TOTAL_FIELDS	2
++#define FRU_PRODUCT_AREA_TOTAL_FIELDS	7
+ #define FRU_TYPELEN_TYPE_SHIFT		6
+ #define FRU_TYPELEN_TYPE_ASCII8		3
+
+@@ -61,4 +108,25 @@ int fru_capture(unsigned long addr);
+
+ extern struct fru_table fru_data;
+
++static const char * chassis_type_desc[] __attribute__((unused)) = {
++		"Unspecified", "Other", "Unknown",
++		"Desktop", "Low Profile Desktop", "Pizza Box",
++		"Mini Tower", "Tower",
++		"Portable", "LapTop", "Notebook", "Hand Held",
++		"Docking Station", "All in One", "Sub Notebook",
++		"Space-saving", "Lunch Box", "Main Server Chassis",
++		"Expansion Chassis", "SubChassis", "Bus Expansion Chassis",
++		"Peripheral Chassis", "RAID Chassis", "Rack Mount Chassis",
++		"Sealed-case PC", "Multi-system Chassis", "CompactPCI",
++		"AdvancedTCA", "Blade", "Blade Enclosure"
++};
++
++static const char *typecode[] __attribute__((unused)) = {
++		"Binary/Unspecified",
++		"BCD plus",
++		"6-bit ASCII",
++		"8-bit ASCII",
++		"2-byte UNICODE"
++};
++
+ #endif /* FRU_H */
+--
+2.34.1
+
