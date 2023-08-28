@@ -1,0 +1,50 @@
+From a9d1303a685b05f13f69a9d6126756c335e26c1f Mon Sep 17 00:00:00 2001
+From: Chanh Nguyen <chanh@os.amperecomputing.com>
+Date: Mon, 23 Oct 2023 16:44:52 +0700
+Subject: [PATCH] initrdscripts: Support save files in BMC fw update
+
+Update the obmc-shutdown script to run the update script
+with --save-files --restore-files option, that makes
+keep file in the whitelist during BMC update.
+
+Update the obmc-init script to run obmc-update script
+with --save-files option, the file in the whitelist is
+kept persistent during factory-reset.
+
+Upstream-Status: Pending
+
+Signed-off-by: Chanh Nguyen <chanh@os.amperecomputing.com>
+---
+ meta-phosphor/recipes-phosphor/initrdscripts/files/obmc-init.sh | 2 +-
+ .../recipes-phosphor/initrdscripts/files/obmc-shutdown.sh       | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/meta-phosphor/recipes-phosphor/initrdscripts/files/obmc-init.sh b/meta-phosphor/recipes-phosphor/initrdscripts/files/obmc-init.sh
+index 3df371fbc1..52b356aa16 100644
+--- a/obmc-init.sh
++++ b/obmc-init.sh
+@@ -297,7 +297,7 @@ if grep -w factory-reset $optfile
+ then
+ 	echo "Factory reset requested."
+ 	touch $trigger
+-	do_save=--no-save-files
++	do_save=--save-files
+ else
+ 	do_save=--save-files
+ fi
+diff --git a/meta-phosphor/recipes-phosphor/initrdscripts/files/obmc-shutdown.sh b/meta-phosphor/recipes-phosphor/initrdscripts/files/obmc-shutdown.sh
+index 2de0937ce3..1d80e46a67 100644
+--- a/obmc-shutdown.sh
++++ b/obmc-shutdown.sh
+@@ -49,7 +49,7 @@ then
+ 		else
+ 			wd=
+ 		fi
+-		$update --clean-saved-files
++		$update --save-files --restore-files --clean-saved-files
+ 		remaining=$(ls $image*)
+ 		if test -n "$remaining"
+ 		then
+--
+2.17.1
+
