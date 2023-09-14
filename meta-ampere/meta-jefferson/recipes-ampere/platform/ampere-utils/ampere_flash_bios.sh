@@ -40,7 +40,15 @@ do_flash () {
 
 	echo "--- Flashing firmware image $IMAGE to @/dev/$HOST_MTD"
 	HOST_MTD=${HOST_MTD/"mtd"/""}
-	flashcp -v "$IMAGE" /dev/"$HOST_MTD"
+	flashrom -N -n -p linux_mtd:dev="$HOST_MTD" -w "$IMAGE"
+	if [ "$?" == '1' ]; then
+		echo "FAILED: Firmware update!!"
+		gpioset $(gpiofind spi0-backup-sel)=1   # Primary SPI
+		gpioset $(gpiofind spi0-program-sel)=0  # Switch SPI-NOR to Host
+		exit 1
+	else
+		echo "SUCCESS: Firmware update!!"
+	fi
 }
 
 if [ $# -eq 0 ]; then

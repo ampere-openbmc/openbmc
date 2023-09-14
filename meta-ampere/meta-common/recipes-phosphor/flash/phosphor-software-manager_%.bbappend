@@ -7,7 +7,7 @@ SRC_URI += " \
 
 PACKAGECONFIG:append = " flash_bios static-dual-image"
 
-RDEPENDS:${PN} += "bash"
+RDEPENDS:${PN} += "bash flashrom"
 
 do_install:append() {
     install -d ${D}/usr/sbin
