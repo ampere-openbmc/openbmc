@@ -102,4 +102,7 @@ if [[ ! -e /dev/rtc0 ]]; then
     echo 6-0051 > /sys/bus/i2c/drivers/rtc-pcf8563/bind
 fi
 
+# Initial checking of scandump mode to preserve scandump state if necessary
+/usr/sbin/ampere_scandump_mode.sh init
+
 exit 0
