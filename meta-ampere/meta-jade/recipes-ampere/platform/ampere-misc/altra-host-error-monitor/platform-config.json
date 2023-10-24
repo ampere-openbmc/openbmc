@@ -1,0 +1,5 @@
+{
+    "number_socket": 2,
+    "s0_errmon_path": "/sys/bus/platform/devices/smpro-errmon.1.auto/",
+    "s1_errmon_path": "/sys/bus/platform/devices/smpro-errmon.4.auto/"
+}
