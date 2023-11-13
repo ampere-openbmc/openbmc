@@ -10,12 +10,13 @@ SRC_URI:append = " \
 SYSTEMD_SERVICE:${PN} += "mctp-local.service"
 
 EXTRA_OEMESON:append = " \
+                        -Dtests=false \
                         -Dunsafe-writable-connectivity=true \
                        "
 
 do_install:append() {
-    install -m 0644 ${UNPACKDIR}/mctp-local.service ${D}${systemd_system_unitdir}/
     install -d ${D}/etc/
+    install -m 0644 ${UNPACKDIR}/mctp-local.service ${D}${systemd_system_unitdir}/
     install -m 0644 ${UNPACKDIR}/mctpd.conf ${D}/etc/mctpd.conf
 }
 
