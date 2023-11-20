@@ -4,6 +4,7 @@ PACKAGECONFIG:append = " host-gpio check-fwupdate-before-do-transition"
 
 SRC_URI += " \
               file://ampere-phosphor-reboot-host@.service \
+              file://0001-Limit-power-actions-when-the-host-is-off.patch \
 	   "
 
 EXTRA_OEMESON:append = " \
