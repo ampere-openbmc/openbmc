@@ -29,6 +29,7 @@ RDEPENDS:${PN}-chassis = " \
         ampere-usbnet \
         ampere-ipmi-oem \
         ampere-driver-binder \
+        ampere-misc \
         bootstrap-account \
         "
 
