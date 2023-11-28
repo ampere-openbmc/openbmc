@@ -1,0 +1,6 @@
+[Unit]
+Description= Notify that total power consumption drops below the power cap
+
+[Service]
+ExecStart=/usr/sbin/power_cap_drop_below_limit.sh
+Type=oneshot

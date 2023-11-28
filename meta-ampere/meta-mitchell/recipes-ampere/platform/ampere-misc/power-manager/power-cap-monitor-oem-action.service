@@ -1,0 +1,11 @@
+[Unit]
+Description= Monitor OEM action to set SoC Power limit to default
+After=xyz.openbmc_project.power.manager.service
+
+[Service]
+ExecStart=/usr/sbin/power_cap_monitor_oem_action.sh
+Type=simple
+SyslogIdentifier=power-manager
+
+[Install]
+WantedBy=multi-user.target
