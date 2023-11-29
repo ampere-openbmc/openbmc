@@ -1,0 +1,11 @@
+[Unit]
+Description=Monitor GPIO fault and updade fault LED status %i
+Before=obmc-host-start-pre@0.target
+BindTo=ampere-host-on-host-check@0.service
+
+[Service]
+Restart=no
+ExecStart=/bin/sh -c "if [ -f /usr/sbin/ampere_check_gpio_fault.sh ]; then /usr/sbin/ampere_check_gpio_fault.sh %i; fi"
+ExecStopPost=/bin/sh -c "if [ $(busctl get-property xyz.openbmc_project.LED.GroupManager /xyz/openbmc_project/led/groups/gpio_fault xyz.openbmc_project.Led.Group Asserted | cut -d' ' -f2) == "true" ]; then sleep 5; busctl set-property xyz.openbmc_project.LED.GroupManager /xyz/openbmc_project/led/groups/gpio_fault xyz.openbmc_project.Led.Group Asserted b false; fi"
+SyslogIdentifier=ampere_check_fault_gpio
+Type=simple

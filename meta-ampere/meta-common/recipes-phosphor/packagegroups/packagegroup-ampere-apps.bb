@@ -36,6 +36,7 @@ RDEPENDS:${PN}-chassis = " \
 SUMMARY:${PN}-system = "Ampere System"
 RDEPENDS:${PN}-system = " \
         ampere-hostctrl \
+        ampere-fault-monitor \
         "
 
 SUMMARY:${PN}-flash = "Ampere Flash"
