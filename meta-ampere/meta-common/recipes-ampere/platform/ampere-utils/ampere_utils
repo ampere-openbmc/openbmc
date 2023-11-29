@@ -11,6 +11,18 @@ source /usr/sbin/utils-lib.sh
 ERR_SUCCESS="0"
 ERR_FAILURE="1"
 
+# led variables
+led_service='xyz.openbmc_project.LED.GroupManager'
+led_gpio_fault_path='/xyz/openbmc_project/led/groups/gpio_fault'
+led_fault_interface='xyz.openbmc_project.Led.Group'
+led_fault_property='Asserted'
+on="true"
+off="false"
+
+turn_on_off_gpio_fault_led() {
+	busctl set-property $led_service $led_gpio_fault_path $led_fault_interface $led_fault_property b "$1" >> /dev/null
+}
+
 function is_host_going_to_off()
 {
 	cc="false"
@@ -55,7 +67,7 @@ function host_state_handler()
 			busctl set-property xyz.openbmc_project.LED.GroupManager \
 				/xyz/openbmc_project/led/groups/ras_ue_fault \
 				xyz.openbmc_project.Led.Group Asserted b false
-			rm -rf /tmp/gpio_fault
+			turn_on_off_gpio_fault_led $off
 			cc=$ERR_SUCCESS
 		fi
 	fi
