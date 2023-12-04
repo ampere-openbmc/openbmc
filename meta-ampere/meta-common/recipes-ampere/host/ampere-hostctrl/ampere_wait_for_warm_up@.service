@@ -1,0 +1,11 @@
+[Unit]
+Description=Wait for the Host%i is warmed-up
+After=obmc-host-started@%i.target
+After=obmc-power-start-pre@%i.target
+Conflicts=obmc-host-stop@%i.target
+Conflicts=phosphor-reset-host-check@%i.service
+OnFailureJobMode=flush
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/sleep 10s

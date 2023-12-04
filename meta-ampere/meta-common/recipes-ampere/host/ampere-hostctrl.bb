@@ -19,6 +19,7 @@ SRC_URI = " \
            file://obmc-power-already-on@.target \
            file://obmc-host-already-on@.target \
            file://ampere-bmc-reboot-host-check@.service \
+           file://ampere_wait_for_warm_up@.service \
           "
 
 SYSTEMD_PACKAGES = "${PN}"
@@ -28,6 +29,7 @@ SYSTEMD_SERVICE:${PN} = " \
                          obmc-power-already-on@.target \
                          obmc-host-already-on@.target \
                          ampere-bmc-reboot-host-check@.service \
+                         ampere_wait_for_warm_up@.service \
                         "
 
 # append force reboot
@@ -44,6 +46,12 @@ HOST_ON_RESET_HOSTTGTFMT = "obmc-host-startmin@{0}.target"
 HOST_ON_RESET_HOSTFMT = "../${HOST_ON_RESET_HOSTTMPL}:${HOST_ON_RESET_HOSTTGTFMT}.requires/${HOST_ON_RESET_HOSTINSTMPL}"
 SYSTEMD_LINK:${PN} += "${@compose_list_zip(d, 'HOST_ON_RESET_HOSTFMT', 'OBMC_HOST_INSTANCES')}"
 SYSTEMD_SERVICE:${PN} += "${HOST_ON_RESET_HOSTTMPL}"
+
+WAIT_FOR_WARM_UP = "ampere_wait_for_warm_up@.service"
+WAIT_FOR_WARM_UP_INSTMPL = "ampere_wait_for_warm_up@{0}.service"
+WAIT_FOR_WARM_UP_FMT = "../${WAIT_FOR_WARM_UP}:${HOST_ON_RESET_HOSTTGTFMT}.requires/${WAIT_FOR_WARM_UP_INSTMPL}"
+SYSTEMD_LINK:${PN} += "${@compose_list_zip(d, 'WAIT_FOR_WARM_UP_FMT', 'OBMC_HOST_INSTANCES')}"
+SYSTEMD_SERVICE:${PN} += "${WAIT_FOR_WARM_UP}"
 
 # append on phosphor-wait-power-on
 AMPERE_POWER_ON_TGT = "obmc-power-already-on@.target"
