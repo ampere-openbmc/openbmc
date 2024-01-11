@@ -1,0 +1,90 @@
+From 4f935f72fa78279af13bbc7f366bdc52b4ebffd9 Mon Sep 17 00:00:00 2001
+From: Thu Nguyen <thu@os.amperecomputing.com>
+Date: Thu, 5 Oct 2023 09:11:17 +0700
+Subject: [PATCH] Support flash image size less than chip size
+
+flashrom tool does not support flashing the image which has the image
+size smaller than chip size. This commit supports that.
+
+Tested:
+1. Flash the 32MB image to the 64MB chip size.
+
+Upstream-Status: Pending
+
+Signed-off-by: Thu Nguyen <thu@os.amperecomputing.com>
+
+%% original patch: 0001-Support-flash-image-size-less-than-chip-size.patch
+---
+ cli_classic.c | 34 ++++++++++++++++++++++++++++++++++
+ flashrom.c    |  3 ++-
+ 2 files changed, 36 insertions(+), 1 deletion(-)
+
+diff --git a/cli_classic.c b/cli_classic.c
+index 73cc417..90ca4b2 100644
+--- a/cli_classic.c
++++ b/cli_classic.c
+@@ -17,6 +17,7 @@
+  * GNU General Public License for more details.
+  */
+
++#include <errno.h>
+ #include <stdio.h>
+ #include <fcntl.h>
+ #include <sys/stat.h>
+@@ -636,6 +637,39 @@ int main(int argc, char *argv[])
+ 	 * Give the chip time to settle.
+ 	 */
+ 	programmer_delay(100000);
++	/* Support use image size smaller than chip size */
++	if (read_it | write_it | verify_it)
++	{
++		FILE *image;
++		if ((image = fopen(filename, "rb")) == NULL) {
++			msg_gerr("Error: opening file \"%s\" failed: %s\n", filename, strerror(errno));
++			goto out;
++		}
++
++		struct stat image_stat;
++		if (fstat(fileno(image), &image_stat) != 0) {
++			msg_gerr("Error: getting metadata of file \"%s\" failed: %s\n", filename, strerror(errno));
++			goto out;
++		}
++		unsigned int file_size = (unsigned int) image_stat.st_size;
++		if ((file_size != 0) && (file_size % 1024 == 0) &&
++			(file_size < (fill_flash->chip->total_size * 1024)))
++		{
++			msg_gerr("File \"%s\" image size: (%lu B) is different with chip's size (%u B)\n",
++				filename, file_size, fill_flash->chip->total_size * 1024);
++			msg_gerr("Use file size (%lu B) as chip size for read/write/erase features.\n", file_size);
++			fill_flash->chip->total_size = file_size / 1024;
++			fill_flash->fallback_layout.entry.end = file_size;
++			fill_flash->fallback_layout.entry.start = 0;
++			if (fill_flash->layout != NULL &&
++				fill_flash->layout->num_entries == 1)
++			{
++				fill_flash->layout->entries->end = file_size;
++				fill_flash->layout->entries->start = 0;
++			}
++		}
++	}
++
+ 	if (read_it)
+ 		ret = do_read(fill_flash, filename);
+ 	else if (erase_it)
+diff --git a/flashrom.c b/flashrom.c
+index 61e9530..956f521 100644
+--- a/flashrom.c
++++ b/flashrom.c
+@@ -2571,7 +2571,8 @@ int do_write(struct flashctx *const flash, const char *const filename, const cha
+
+ _free_ret:
+ 	free(refcontents);
+-	free(newcontents);
++	if (referencefile)
++		free(newcontents);
+ 	return ret;
+ }
+
+--
+2.17.1
+
