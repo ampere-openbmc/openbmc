@@ -1,0 +1,149 @@
+From 2bb74ca338f598d6a8329673ccfb41eafbbeeb34 Mon Sep 17 00:00:00 2001
+From: Thu Nguyen <thu@os.amperecomputing.com>
+Date: Mon, 4 Aug 2025 08:16:01 +0000
+Subject: [PATCH] Support flash image size less than chip size
+
+flashrom tool does not support flashing the image which has the image
+size smaller than chip size. This commit supports that.
+
+Tested:
+1. Flash the 32MB image to the 64MB chip size.
+
+Upstream-Status: Pending
+
+Signed-off-by: Thu Nguyen <thu@os.amperecomputing.com>
+---
+ cli_classic.c    | 55 +++++++++++++++++++++++++++++++++++++++++++++++-
+ include/layout.h | 10 +++++++++
+ layout.c         | 10 ---------
+ 3 files changed, 64 insertions(+), 11 deletions(-)
+
+diff --git a/cli_classic.c b/cli_classic.c
+index 8f370196..2ad154dc 100644
+--- a/cli_classic.c
++++ b/cli_classic.c
+@@ -30,6 +30,7 @@
+ #include "flashchips.h"
+ #include "fmap.h"
+ #include "programmer.h"
++#include "layout.h"
+ #include "libflashrom.h"
+ 
+ #if CONFIG_RPMC_ENABLED == 1
+@@ -681,7 +682,8 @@ static int do_write(struct flashctx *const flash, const char *const filename, co
+ 
+ _free_ret:
+ 	free(refcontents);
+-	free(newcontents);
++	if (referencefile)
++		free(newcontents);
+ 	return ret;
+ }
+ 
+@@ -1021,6 +1023,12 @@ static void free_options(struct cli_options *options)
+ 	free((char *)options->chip_to_probe);
+ }
+ 
++static struct romentry *mutable_layout_next(
++		const struct flashrom_layout *const layout, struct romentry *iterator)
++{
++	return iterator ? iterator->next : layout->head;
++}
++
+ int main(int argc, char *argv[])
+ {
+ 	const struct flashchip *chip = NULL;
+@@ -1421,6 +1429,51 @@ int main(int argc, char *argv[])
+ 	 * Give the chip time to settle.
+ 	 */
+ 	programmer_delay(fill_flash, 100000);
++
++	/* Support use image size smaller than chip size */
++	if (options.read_it | options.write_it | options.verify_it)
++	{
++		FILE *image;
++		if ((image = fopen(options.filename, "rb")) == NULL) {
++			msg_gerr("Error: opening file \"%s\" failed: %s\n", options.filename, strerror(errno));
++			goto out;
++		}
++
++		struct stat image_stat;
++		if (fstat(fileno(image), &image_stat) != 0) {
++			msg_perr("Error: getting metadata of file \"%s\" failed: %s\n", options.filename, strerror(errno));
++			goto out;
++		}
++		unsigned int file_size = (unsigned int) image_stat.st_size;
++		if ((file_size != 0) && (file_size % 1024 == 0) &&
++			(file_size < (fill_flash->chip->total_size * 1024)))
++		{
++			msg_perr("File \"%s\" image size: (%u B) is different with chip's size (%u B)\n",
++				options.filename, file_size, fill_flash->chip->total_size * 1024);
++			msg_gerr("Use file size (%u B) as chip size for read/write/erase features.\n", file_size);
++			fill_flash->chip->total_size = file_size / 1024;
++
++            /* Get first entry */
++            if (fill_flash->layout)
++            {
++                struct romentry *entry = mutable_layout_next(fill_flash->layout, NULL);
++                if (entry) {
++                    entry->region.start = 0;
++                    entry->region.end = file_size;
++                }
++            }
++            if (fill_flash->default_layout)
++            {
++                /* Get first entry */
++                struct romentry *default_entry = mutable_layout_next(fill_flash->default_layout, NULL);
++                if (default_entry) {
++                    default_entry->region.start = 0;
++                    default_entry->region.end = file_size - 1;
++                }
++            }
++		}
++	}
++
+ 	if (options.read_it)
+ 		ret = do_read(fill_flash, options.filename);
+ 	else if (options.extract_it)
+diff --git a/include/layout.h b/include/layout.h
+index d03a15b2..5463b97b 100644
+--- a/include/layout.h
++++ b/include/layout.h
+@@ -35,6 +35,16 @@ typedef uint32_t chipsize_t; /* Able to store the number of bytes of any support
+ 
+ #define MAX_ROMLAYOUT	128
+ 
++struct flashrom_layout {
++	struct romentry *head;
++};
++
++struct layout_include_args {
++	char *name;
++	char *file;
++	struct layout_include_args *next;
++};
++
+ struct flash_region {
+ 	char *name;
+ 	/*
+diff --git a/layout.c b/layout.c
+index e46e61ae..308ecec6 100644
+--- a/layout.c
++++ b/layout.c
+@@ -25,16 +25,6 @@
+ #include "programmer.h"
+ #include "layout.h"
+ 
+-struct flashrom_layout {
+-	struct romentry *head;
+-};
+-
+-struct layout_include_args {
+-	char *name;
+-	char *file;
+-	struct layout_include_args *next;
+-};
+-
+ const struct flashrom_layout *get_default_layout(const struct flashrom_flashctx *const flashctx)
+ {
+ 	return flashctx->default_layout;
