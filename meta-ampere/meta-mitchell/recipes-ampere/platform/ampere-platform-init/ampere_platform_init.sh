@@ -104,4 +104,7 @@ mtc_board_revision_detection
 #post platform init function. implemented in platform_gpios_init.sh
 post-platform-init
 
+# Initial checking of scandump mode to preserve scandump state if necessary
+/usr/sbin/ampere_scandump_mode.sh init
+
 exit 0
