@@ -1,0 +1,10 @@
+[Unit]
+Description=Ampere BERT handler for power action of the host
+After=obmc-host-stop@0.target
+Before=obmc-host-reboot@0.target
+
+[Service]
+Restart=no
+ExecStart=/usr/sbin/ampere-bert-power-handle.sh
+SyslogIdentifier=ampere-bert-power-handle
+Type=oneshot
