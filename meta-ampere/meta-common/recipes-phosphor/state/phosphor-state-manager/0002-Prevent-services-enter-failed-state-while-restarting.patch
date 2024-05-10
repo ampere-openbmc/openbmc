@@ -1,0 +1,129 @@
+From d370328e5e1051d3a6a94c79b1b4c21bec210c56 Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Mon, 29 Jul 2024 08:52:26 +0700
+Subject: [PATCH 2/5] Prevent services enter failed state while restarting
+
+Scenario:
+Sometimes, services can fail to start application in the first time. The
+BMC detected that this service entered to failed state, therefore, it
+updated the BMC's state to Quiesced. But this service is auto restarted,
+and it can successfully after that.
+
+Update:
+This commit updated the .service files to prevent services enter the
+failed state until it touchs the restart limit conditions.
+
+Tested:
+    1. Force services is failed to start in the first time.
+    2. Check BMC's state when all of application are ready.
+       $busctl get-property xyz.openbmc_project.State.BMC \
+        /xyz/openbmc_project/state/bmc0 \
+        xyz.openbmc_project.State.BMC CurrentBMCState
+    3. The BMC's state are "Ready"
+
+Upstream-Status: Pending
+
+Signed-off-by: Thang Tran <thuutran@amperecomputing.com>
+---
+ service_files/xyz.openbmc_project.State.BMC.service           | 4 +++-
+ service_files/xyz.openbmc_project.State.Chassis@.service      | 3 +++
+ service_files/xyz.openbmc_project.State.Host@.service         | 3 +++
+ service_files/xyz.openbmc_project.State.Hypervisor.service    | 3 +++
+ ...xyz.openbmc_project.State.ScheduledHostTransition@.service | 3 +++
+ 5 files changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/service_files/xyz.openbmc_project.State.BMC.service b/service_files/xyz.openbmc_project.State.BMC.service
+index 2827603..9b0719f 100644
+--- a/service_files/xyz.openbmc_project.State.BMC.service
++++ b/service_files/xyz.openbmc_project.State.BMC.service
+@@ -2,11 +2,13 @@
+ Description=Phosphor BMC State Manager
+ Before=mapper-wait@-xyz-openbmc_project-state-bmc.service
+ After=xyz.openbmc_project.State.Chassis@0.service
+-
++StartLimitIntervalSec=60
++StartLimitBurst=5
+
+ [Service]
+ ExecStart=/usr/bin/phosphor-bmc-state-manager
+ Restart=always
++RestartMode=direct
+ Type=dbus
+ BusName=xyz.openbmc_project.State.BMC
+
+diff --git a/service_files/xyz.openbmc_project.State.Chassis@.service b/service_files/xyz.openbmc_project.State.Chassis@.service
+index 2d20d30..743b3b5 100644
+--- a/service_files/xyz.openbmc_project.State.Chassis@.service
++++ b/service_files/xyz.openbmc_project.State.Chassis@.service
+@@ -2,11 +2,14 @@
+ Description=Phosphor Chassis%i State Manager
+ Before=mapper-wait@-xyz-openbmc_project-state-chassis%i.service
+ After=org.openbmc.control.Power@%i.service
++StartLimitIntervalSec=60
++StartLimitBurst=5
+
+ [Service]
+ ExecStartPre=/bin/mkdir -p /run/openbmc/
+ ExecStart=/usr/bin/phosphor-chassis-state-manager --chassis %i
+ Restart=always
++RestartMode=direct
+ Type=dbus
+ BusName=xyz.openbmc_project.State.Chassis%i
+
+diff --git a/service_files/xyz.openbmc_project.State.Host@.service b/service_files/xyz.openbmc_project.State.Host@.service
+index 21e8e39..2c3a3db 100644
+--- a/service_files/xyz.openbmc_project.State.Host@.service
++++ b/service_files/xyz.openbmc_project.State.Host@.service
+@@ -11,10 +11,13 @@ Wants=xyz.openbmc_project.Settings.service
+ After=xyz.openbmc_project.Settings.service
+ Wants=xyz.openbmc_project.Dump.Manager.service
+ After=xyz.openbmc_project.Dump.Manager.service
++StartLimitIntervalSec=60
++StartLimitBurst=5
+
+ [Service]
+ ExecStart=/usr/bin/phosphor-host-state-manager --host %i
+ Restart=always
++RestartMode=direct
+ Type=dbus
+ BusName=xyz.openbmc_project.State.Host%i
+
+diff --git a/service_files/xyz.openbmc_project.State.Hypervisor.service b/service_files/xyz.openbmc_project.State.Hypervisor.service
+index a6739f3..749eb00 100644
+--- a/service_files/xyz.openbmc_project.State.Hypervisor.service
++++ b/service_files/xyz.openbmc_project.State.Hypervisor.service
+@@ -1,10 +1,13 @@
+ [Unit]
+ Description=Phosphor Hypervisor State Manager
+ Before=mapper-wait@-xyz-openbmc_project-state-hypervisor.service
++StartLimitIntervalSec=60
++StartLimitBurst=5
+
+ [Service]
+ ExecStart=/usr/bin/phosphor-hypervisor-state-manager
+ Restart=always
++RestartMode=direct
+ Type=dbus
+ BusName=xyz.openbmc_project.State.Hypervisor
+
+diff --git a/service_files/xyz.openbmc_project.State.ScheduledHostTransition@.service b/service_files/xyz.openbmc_project.State.ScheduledHostTransition@.service
+index d3d003a..819faf4 100644
+--- a/service_files/xyz.openbmc_project.State.ScheduledHostTransition@.service
++++ b/service_files/xyz.openbmc_project.State.ScheduledHostTransition@.service
+@@ -2,10 +2,13 @@
+ Description=Phosphor Scheduled Host%i Transition Manager
+ Wants=xyz.openbmc_project.State.Host@%i.service
+ After=xyz.openbmc_project.State.Host@%i.service
++StartLimitIntervalSec=60
++StartLimitBurst=5
+
+ [Service]
+ ExecStart=/usr/bin/phosphor-scheduled-host-transition --host %i
+ Restart=always
++RestartMode=direct
+ Type=dbus
+ BusName=xyz.openbmc_project.State.ScheduledHostTransition%i
+
+--
+2.34.1
+
