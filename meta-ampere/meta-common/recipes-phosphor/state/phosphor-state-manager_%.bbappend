@@ -5,6 +5,7 @@ PACKAGECONFIG:append = " host-gpio"
 SRC_URI += " \
               file://ampere-phosphor-reboot-host@.service \
               file://0001-Limit-power-actions-when-the-host-is-off.patch \
+              file://0002-Prevent-services-enter-failed-state-while-restarting.patch \
 	   "
 
 EXTRA_OEMESON:append = " \
