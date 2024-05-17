@@ -7,6 +7,7 @@ SRC_URI += " \
               file://ampere-phosphor-reboot-host@.service \
               file://0001-Limit-power-actions-when-the-host-is-off.patch \
               file://0002-Prevent-services-enter-failed-state-while-restarting.patch \
+              file://0003-host-state-emit-dbus-signals-while-initialization.patch \
               file://ampere_phosphor-service-monitor-default.json \
            "
 
