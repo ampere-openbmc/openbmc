@@ -1,0 +1,71 @@
+From cf40b3606099e050cb0ffc779a982ffa23e4546c Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Mon, 29 Jul 2024 08:53:11 +0700
+Subject: [PATCH 3/5] host-state: emit dbus signals while initialization
+
+Currently, the phosphor-host-state-manager does not emit dbus signals to
+inform other applications about the initialization value.
+Some applications that started before phosphor-host-state-manager can
+not detect the host's state if they are monitoring dbus signals.
+
+Example: Sometimes, phosphor-host-state-manager fails to start in the
+first time, and it has to restart. During that, Dbus-sensors's
+applications started and monitored dbus signals to check the host's
+state. But they never receive dbus signals when
+phosphor-host-state-manager sets the initialization value. If the
+initialization value of the host's state is "Running", it made sensors
+that depend on the host's state can not be probed, their "Available"
+property is always "false".
+
+This commit removes "skipSignal" flags when phosphor-host-state-manager
+updates the initialization values.
+
+Tested:
+    1. Turn on the host, then reboot BMC.
+    2. Force to start phosphor-host-state-manager after dbus-sensors
+       applications.
+    3. Check sensors
+       $ipmitool sdr list.
+    4. Sensors that depend on the host's state are shown correctly.
+
+Upstream-Status: Pending
+
+Change-Id: Ifddb234161807cc4da6337bb9a06582d2ee9cf85
+Signed-off-by: Thang Tran <thuutran@amperecomputing.com>
+---
+ host_state_manager.cpp | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/host_state_manager.cpp b/host_state_manager.cpp
+index 195f5e4..ce4919f 100644
+--- a/host_state_manager.cpp
++++ b/host_state_manager.cpp
+@@ -66,20 +66,20 @@ void Host::determineInitialState()
+         isHostRunning(id))
+     {
+         info("Initial Host State will be Running");
+-        server::Host::currentHostState(HostState::Running, true);
+-        server::Host::requestedHostTransition(Transition::On, true);
++        server::Host::currentHostState(HostState::Running);
++        server::Host::requestedHostTransition(Transition::On);
+     }
+     else
+     {
+         info("Initial Host State will be Off");
+-        server::Host::currentHostState(HostState::Off, true);
+-        server::Host::requestedHostTransition(Transition::Off, true);
++        server::Host::currentHostState(HostState::Off);
++        server::Host::requestedHostTransition(Transition::Off);
+     }
+
+     if (!deserialize())
+     {
+         // set to default value.
+-        server::Host::requestedHostTransition(Transition::Off, true);
++        server::Host::requestedHostTransition(Transition::Off);
+     }
+     return;
+ }
+--
+2.34.1
+
