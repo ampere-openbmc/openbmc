@@ -5,7 +5,9 @@ CONSOLE_CLIENT_SERVICE_FMT = "obmc-console-ssh@{0}.service"
 CONSOLE_SERVER_CONF_FMT = "file://server.{0}.conf"
 CONSOLE_CLIENT_CONF_FMT = "file://client.{0}.conf"
 
-SRC_URI += " file://obmc-console@.service"
+SRC_URI += " file://obmc-console@.service \
+             file://0001-console-client-set-non-blocking-for-writing-to-fd_ou.patch \
+           "
 
 SYSTEMD_SERVICE:${PN}:remove = "obmc-console-ssh.socket"
 

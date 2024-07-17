@@ -1,0 +1,73 @@
+From 887f8633840784007a70fda6b930d3f71d236a4c Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Fri, 12 Jul 2024 13:26:32 +0700
+Subject: [PATCH] console-client: set non-blocking for writing to fd_out
+
+Issue: when users open multiple solssh console, then request to
+stress-test the system. Sometimes, the obmc-client application is
+blocked when try to write data to console [1]. It makes others
+applciation can not connect to "obmc-console.default" socket, therefore,
+those application are blocked when try to connect (E.g:
+phosphor-net-ipmid [1]).
+
+Root cause: I do not why the writing is blocked.
+
+Solution: Change the writing from BLOCKING to NON-BLOCKING option.
+
+Note: This is WORK-AROUND solution, we should find out the root cause.
+
+[1]https://github.com/openbmc/phosphor-net-ipmid/blob/master/sol/sol_manager.cpp#L37
+
+Tested:
+   1. Stress test multiple solssh console at the same time.
+   2. Request to access to sol console via OOB IPMI commands.
+      $ipmitool -H <BMC_IP> -U <USER> -P <PASS> -C 17 -I lanplus \
+                sol activate
+   3. The sol console via IPMI command work well, other OOB IPMI
+      commands still work.
+
+Upstream-Status: Pending
+
+Signed-off-by: Thang Tran <thuutran@amperecomputing.com>
+---
+ console-client.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/console-client.c b/console-client.c
+index 3dc3190..b61aedf 100644
+--- a/console-client.c
++++ b/console-client.c
+@@ -24,6 +24,7 @@
+ #include <string.h>
+ #include <termios.h>
+ #include <unistd.h>
++#include <fcntl.h>
+
+ #include <sys/socket.h>
+ #include <sys/un.h>
+@@ -185,7 +186,7 @@ static int process_console(struct console_client *client)
+ static int client_tty_init(struct console_client *client)
+ {
+ 	struct termios termios;
+-	int rc;
++	int rc, flags;
+
+ 	client->fd_in = STDIN_FILENO;
+ 	client->fd_out = STDOUT_FILENO;
+@@ -209,6 +210,13 @@ static int client_tty_init(struct console_client *client)
+ 		return -1;
+ 	}
+
++	flags = fcntl(client->fd_out, F_GETFL, 0);
++	rc = fcntl(client->fd_out, F_SETFL, flags | O_NONBLOCK);
++	if (rc) {
++		warn("Can't configure Non-blocking for STDOUT_FILENO");
++		return -1;
++	}
++
+ 	return 0;
+ }
+
+--
+2.25.1
+
