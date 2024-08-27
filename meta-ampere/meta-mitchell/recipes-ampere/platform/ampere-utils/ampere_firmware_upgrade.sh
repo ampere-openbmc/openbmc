@@ -78,7 +78,7 @@ do_eeprom_flash() {
 	then
 		sleep 5
 		echo "Turn on the Host"
-		obmcutil poweron
+		systemctl start turn-on-the-host-after-flash@60
 	fi
 }
 
