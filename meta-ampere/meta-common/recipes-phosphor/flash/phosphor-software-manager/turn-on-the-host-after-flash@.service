@@ -1,0 +1,6 @@
+[Unit]
+Description=Ampere service to turn on the host after flashing
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/turn_on_host_after_flash.sh %i
