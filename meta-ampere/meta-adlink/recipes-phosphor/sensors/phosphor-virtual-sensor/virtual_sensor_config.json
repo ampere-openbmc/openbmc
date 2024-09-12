@@ -1,0 +1,159 @@
+[
+    {
+        "Desc":
+        {
+            "Name": "CORE_VRD_POWER_5s_AVG",
+            "SensorType": "power"
+        },
+        "Associations":
+        [
+            [
+                "chassis",
+                "all_sensors",
+                "/xyz/openbmc_project/inventory/system/board/COM_HPC_ALT_Carrier"
+            ]
+        ],
+        "Params":
+        {
+            "DbusParam":
+            [
+                {
+                    "ParamName": "P0",
+                    "Desc":
+                    {
+                        "Name": "CALC_P0_0",
+                        "SensorType": "power"
+                    }
+                },
+                {
+                    "ParamName": "P1",
+                    "Desc":
+                    {
+                        "Name": "CALC_P0_1",
+                        "SensorType": "power"
+                    }
+                }
+
+            ]
+        },
+        "Expression": "P0 + P1"
+    },
+    {
+        "Desc":
+        {
+            "Name": "SOC_IO_POWER",
+            "SensorType": "power"
+        },
+        "Associations":
+        [
+            [
+                "chassis",
+                "all_sensors",
+                "/xyz/openbmc_project/inventory/system/board/COM_HPC_ALT_Carrier"
+            ]
+        ],
+        "Params":
+        {
+            "DbusParam":
+            [
+                {
+                    "ParamName": "P0",
+                    "Desc":
+                    {
+                        "Name": "CALC_P1_0",
+                        "SensorType": "power"
+                    }
+                },
+                {
+                    "ParamName": "P1",
+                    "Desc":
+                    {
+                        "Name": "CALC_P1_1",
+                        "SensorType": "power"
+                    }
+                }
+
+            ]
+        },
+        "Expression": "P0 + P1"
+    },
+    {
+        "Desc":
+        {
+            "Name": "DIMM_VRD1_POWER",
+            "SensorType": "power"
+        },
+        "Associations":
+        [
+            [
+                "chassis",
+                "all_sensors",
+                "/xyz/openbmc_project/inventory/system/board/COM_HPC_ALT_Carrier"
+            ]
+        ],
+        "Params":
+        {
+            "DbusParam":
+            [
+                {
+                    "ParamName": "P0",
+                    "Desc":
+                    {
+                        "Name": "CALC_P2_0",
+                        "SensorType": "power"
+                    }
+                },
+                {
+                    "ParamName": "P1",
+                    "Desc":
+                    {
+                        "Name": "CALC_P2_1",
+                        "SensorType": "power"
+                    }
+                }
+
+            ]
+        },
+        "Expression": "P0 + P1"
+    },
+    {
+        "Desc":
+        {
+            "Name": "DIMM_VRD2_POWER",
+            "SensorType": "power"
+        },
+        "Associations":
+        [
+            [
+                "chassis",
+                "all_sensors",
+                "/xyz/openbmc_project/inventory/system/board/COM_HPC_ALT_Carrier"
+            ]
+        ],
+        "Params":
+        {
+            "DbusParam":
+            [
+                {
+                    "ParamName": "P0",
+                    "Desc":
+                    {
+                        "Name": "CALC_P3_0",
+                        "SensorType": "power"
+                    }
+                },
+                {
+                    "ParamName": "P1",
+                    "Desc":
+                    {
+                        "Name": "CALC_P3_1",
+                        "SensorType": "power"
+                    }
+                }
+
+            ]
+        },
+        "Expression": "P0 + P1"
+    }
+]
+

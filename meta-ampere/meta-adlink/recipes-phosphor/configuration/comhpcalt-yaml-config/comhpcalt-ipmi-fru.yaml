@@ -1,0 +1,39 @@
+0:
+  /xyz.openbmc_project.FruDevice/COM_HPC_Carrier:
+    entityID: 1
+    entityInstance: 1
+    interfaces:
+      xyz.openbmc_project.Inventory.Decorator.Asset:
+        PRODUCT_MANUFACTURER:
+          IPMIFruProperty: Manufacturer
+          IPMIFruSection: Product
+        PRODUCT_PRODUCT_NAME:
+          IPMIFruProperty: Name
+          IPMIFruSection: Product
+        PRODUCT_VERSION:
+          IPMIFruProperty: Version
+          IPMIFruSection: Product
+        PRODUCT_SERIAL_NUMBER:
+          IPMIFruProperty: Serial Number
+          IPMIFruSection: Product
+        PRODUCT_ASSET_TAG:
+          IPMIFruProperty: Asset Tag
+          IPMIFruSection: Product
+        PRODUCT_PART_NUMBER:
+          IPMIFruProperty: Custom Field 1
+          IPMIFruSection: Product
+        BOARD_MANUFACTURE_DATE:
+          IPMIFruProperty: Mfg Date
+          IPMIFruSection: Board
+        BOARD_MANUFACTURER:
+          IPMIFruProperty: Manufacturer
+          IPMIFruSection: Board
+        BOARD_PRODUCT_NAME:
+          IPMIFruProperty: Name
+          IPMIFruSection: Board
+        BOARD_SERIAL_NUMBER:
+          IPMIFruProperty: Serial Number
+          IPMIFruSection: Board
+        BOARD_PART_NUMBER:
+          IPMIFruProperty: Part Number
+          IPMIFruSection: Board

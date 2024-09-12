@@ -1,0 +1,15 @@
+[Unit]
+Description=Update MAC address from default or U-boot env
+Requires=phosphor-ipmi-host.service
+Requires=ampere-usbnet.service
+Before=ampere-usbnet.service
+After=phosphor-ipmi-host.service
+
+[Service]
+ExecStart=/usr/sbin/adlink_update_mac.sh
+SyslogIdentifier=adlink_update_mac.sh
+Type=oneshot
+RemainAfterExit=yes
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}

@@ -1,0 +1,15 @@
+{
+    "leds": [
+        {
+            "group" : "fan_fail_led",
+            "members" : [
+                {
+                    "Name" : "fan-fail-led",
+                    "Action" : "Blink",
+                    "DutyOn" : 50,
+                    "Period" : 1000
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,31 @@
+From 56e78c6be8519ae0f50fe92cb750498f918eda9c Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Wed, 14 Jul 2021 14:20:08 +0700
+Subject: [PATCH] Remove throwing exception when can not write data to file
+ Currently, the Collins board is using Chicony PSU. But driver for this one is
+ setting the perimission for fan1_target file to 'read only'. It make the
+ psusensor stop the software when try to write data to fan1_target.
+
+Solution: replace throwing exception to 'return' in setValue function.
+
+Signed-off-by: Thang Tran <thuutran@amperecomputing.com>
+---
+ src/PwmSensor.cpp | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/PwmSensor.cpp b/src/PwmSensor.cpp
+index f76ea50..11bb23b 100644
+--- a/src/PwmSensor.cpp
++++ b/src/PwmSensor.cpp
+@@ -175,7 +175,8 @@ void PwmSensor::setValue(uint32_t value)
+     std::ofstream ref(sysPath);
+     if (!ref.good())
+     {
+-        throw std::runtime_error("Bad Write File");
++        // throw std::runtime_error("Bad Write File");
++        return;
+     }
+     ref << value;
+ }
+-- 
+2.30.0

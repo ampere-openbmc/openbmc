@@ -1,0 +1,32 @@
+{
+    "gpio_configs": {
+
+        "power_config": {
+            "power_good_in": "PGOOD",
+            "power_up_outs": [
+               {"name": "PWREN", "polarity": false},
+               {"name": "CN_CARRIER_HOT_N", "polarity": true}
+            ],
+            "reset_outs": [
+            ]
+        }
+    },
+
+    "gpio_definitions": [
+        {
+            "name": "PGOOD",
+            "pin": "E4",
+            "direction": "in"
+        },
+        {
+            "name": "PWREN",
+            "pin": "Z2",
+            "direction": "out"
+        },
+        {
+            "name": "CN_CARRIER_HOT_N",
+            "pin": "R3",
+            "direction": "out"
+        }
+    ]
+}

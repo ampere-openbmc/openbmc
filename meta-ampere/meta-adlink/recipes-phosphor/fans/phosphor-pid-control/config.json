@@ -1,0 +1,282 @@
+{
+    "sensors": [
+    {
+        "name": "SOC_TEMP",
+        "type": "temp",
+        "readPath": "/xyz/openbmc_project/sensors/temperature/SOC_TEMP",
+        "timeout": 0,
+        "ignoreDbusMinMax": true,
+        "unavailableAsFailed": true
+    },
+    {
+        "name": "FRONT_TEMP",
+        "type": "temp",
+        "readPath": "/xyz/openbmc_project/sensors/temperature/FRONT_TEMP",
+        "timeout": 0,
+        "ignoreDbusMinMax": true,
+        "unavailableAsFailed": true
+    },
+    {
+        "name": "REAR_TEMP",
+        "type": "temp",
+        "readPath": "/xyz/openbmc_project/sensors/temperature/REAR_TEMP",
+        "timeout": 0,
+        "ignoreDbusMinMax": true,
+        "unavailableAsFailed": true
+    },
+    {
+        "name": "DIMM1_TEMP",
+        "type": "temp",
+        "readPath": "/xyz/openbmc_project/sensors/temperature/DIMM1_TEMP",
+        "timeout": 0,
+        "ignoreDbusMinMax": true,
+        "unavailableAsFailed": true
+    },
+    {
+        "name": "DIMM2_TEMP",
+        "type": "temp",
+        "readPath": "/xyz/openbmc_project/sensors/temperature/DIMM2_TEMP",
+        "timeout": 0,
+        "ignoreDbusMinMax": true,
+        "unavailableAsFailed": true
+    },
+    {
+        "name": "DIMM3_TEMP",
+        "type": "temp",
+        "readPath": "/xyz/openbmc_project/sensors/temperature/DIMM3_TEMP",
+        "timeout": 0,
+        "ignoreDbusMinMax": true,
+        "unavailableAsFailed": true
+    },
+    {
+        "name": "DIMM4_TEMP",
+        "type": "temp",
+        "readPath": "/xyz/openbmc_project/sensors/temperature/DIMM4_TEMP",
+        "timeout": 0,
+        "ignoreDbusMinMax": true,
+        "unavailableAsFailed": true
+    },
+    {
+        "name": "DIMM5_TEMP",
+        "type": "temp",
+        "readPath": "/xyz/openbmc_project/sensors/temperature/DIMM5_TEMP",
+        "timeout": 0,
+        "ignoreDbusMinMax": true,
+        "unavailableAsFailed": true
+    },
+    {
+        "name": "DIMM6_TEMP",
+        "type": "temp",
+        "readPath": "/xyz/openbmc_project/sensors/temperature/DIMM6_TEMP",
+        "timeout": 0,
+        "ignoreDbusMinMax": true,
+        "unavailableAsFailed": true
+    },
+    {
+        "name": "FAN1",
+        "type": "fan",
+        "readPath": "/sys/class/hwmon/hwmon0/fan1_input",
+        "writePath": "/sys/class/hwmon/hwmon0/pwm1",
+        "min": 0,
+        "max": 255,
+        "ignoreDbusMinMax": true
+    },
+    {
+        "name": "FAN2",
+        "type": "fan",
+        "readPath": "/sys/class/hwmon/hwmon0/fan2_input",
+        "writePath": "/sys/class/hwmon/hwmon0/pwm2",
+        "min": 0,
+        "max": 255,
+        "ignoreDbusMinMax": true
+    },
+    {
+        "name": "FAN4",
+        "type": "fan",
+        "readPath": "/sys/class/hwmon/hwmon0/fan4_input",
+        "writePath": "/sys/class/hwmon/hwmon0/pwm4",
+        "min": 0,
+        "max": 255,
+        "ignoreDbusMinMax": true
+    },
+    {
+        "name": "FAN5",
+        "type": "fan",
+        "readPath": "/sys/class/hwmon/hwmon0/fan5_input",
+        "writePath": "/sys/class/hwmon/hwmon0/pwm5",
+        "min": 0,
+        "max": 255,
+        "ignoreDbusMinMax": true
+    }
+    ],
+    "zones" : [
+        {
+            "id": 1,
+            "cycleIntervalTimeMS": 500.0,
+            "updateThermalsTimeMS": 1000.0,
+            "minThermalOutput": 30.0,
+            "failsafePercent": 80.0,
+            "pids": [
+                {
+                    "name": "FAN1",
+                    "type": "fan",
+                    "inputs": ["FAN1"],
+                    "setpoint": 30.0,
+                    "pid": {
+                        "samplePeriod": 1.0,
+                        "proportionalCoeff": 0.0,
+                        "derivativeCoeff": 0.0,
+                        "integralCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 1.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 0.0,
+                        "outLim_min": 3.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0
+                    }
+                },
+                {
+                    "name": "FAN2",
+                    "type": "fan",
+                    "inputs": ["FAN2"],
+                    "setpoint": 30.0,
+                    "pid": {
+                        "samplePeriod": 1.0,
+                        "proportionalCoeff": 0.0,
+                        "derivativeCoeff": 0.0,
+                        "integralCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 1.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 0.0,
+                        "outLim_min": 3.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0
+                    }
+                },
+                {
+                    "name": "REAR_TEMPS",
+                    "type": "stepwise",
+                    "inputs": [
+                        "SOC_TEMP",
+                        "REAR_TEMP",
+                        "DIMM4_TEMP",
+                        "DIMM5_TEMP",
+                        "DIMM6_TEMP"
+                    ],
+                    "setpoint": 30.0,
+                    "failsafePercent": 80.0,
+                    "pid": {
+                        "samplePeriod": 1.0,
+                        "positiveHysteresis": 1.0,
+                        "negativeHysteresis": 1.0,
+                        "isCeiling": false,
+                        "reading": {
+                            "0": 30.0,
+                            "1": 40.0,
+                            "2": 50.0,
+                            "3": 60.0,
+                            "4": 70.0,
+                            "5": 80.0
+                        },
+                        "output": {
+                            "0": 35.0,
+                            "1": 45.0,
+                            "2": 50.0,
+                            "3": 70.0,
+                            "4": 85.0,
+                            "5": 100.0
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "id": 2,
+            "cycleIntervalTimeMS": 500.0,
+            "updateThermalsTimeMS": 1000.0,
+            "minThermalOutput": 30.0,
+            "failsafePercent": 80.0,
+            "pids": [
+                {
+                    "name": "FAN4",
+                    "type": "fan",
+                    "inputs": ["FAN4"],
+                    "setpoint": 30.0,
+                    "pid": {
+                        "samplePeriod": 1.0,
+                        "proportionalCoeff": 0.0,
+                        "derivativeCoeff": 0.0,
+                        "integralCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 1.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 0.0,
+                        "outLim_min": 3.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0
+                    }
+                },
+                {
+                    "name": "FAN5",
+                    "type": "fan",
+                    "inputs": ["FAN5"],
+                    "setpoint": 30.0,
+                    "pid": {
+                        "samplePeriod": 1.0,
+                        "proportionalCoeff": 0.0,
+                        "derivativeCoeff": 0.0,
+                        "integralCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 1.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 0.0,
+                        "outLim_min": 3.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0
+                    }
+                },
+                {       
+                    "name": "FRONT_TEMPS",
+                    "type": "stepwise",
+                    "inputs": [
+                        "SOC_TEMP",
+                        "FRONT_TEMP",
+                        "DIMM1_TEMP",
+                        "DIMM2_TEMP",
+                        "DIMM3_TEMP"
+                    ],
+                    "setpoint": 30.0,
+                    "failsafePercent": 80.0,
+                    "pid": {
+                        "samplePeriod": 1.0,
+                        "positiveHysteresis": 1.0,
+                        "negativeHysteresis": 1.0,
+                        "isCeiling": false,
+                        "reading": {
+                            "0": 30.0,
+                            "1": 40.0,
+                            "2": 50.0,
+                            "3": 60.0,
+                            "4": 70.0,
+                            "5": 80.0
+                        },
+                        "output": {
+                            "0": 35.0,
+                            "1": 45.0,
+                            "2": 50.0,
+                            "3": 70.0,
+                            "4": 85.0,
+                            "5": 100.0
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}

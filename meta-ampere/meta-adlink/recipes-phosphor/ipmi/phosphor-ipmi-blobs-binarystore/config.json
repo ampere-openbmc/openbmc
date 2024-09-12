@@ -1,0 +1,6 @@
+[{
+  "blobBaseId": "/skm/hss/",
+  "sysFilePath": "/sys/class/i2c-dev/i2c-0/device/0-0050/eeprom",
+  "offsetBytes": 256,
+  "maxSizeBytes": 512
+}]

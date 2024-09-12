@@ -1,0 +1,48 @@
+From 5718910df9d57d841b8243bc49d8de5af46e6df7 Mon Sep 17 00:00:00 2001
+From: Chau Ly <chaul@amperecomputing.com>
+Date: Wed, 8 Feb 2023 08:24:54 +0000
+Subject: [PATCH 2/2] Keep default polling time when TachSensor returns timeout
+ error
+
+When a fan is unplugged, tach driver of AST2500 shows a timeout error
+in hwmon. TachSensor will treat this as an error and increase the polling
+time from 0.5s to 5s to ensure the error. dbus-sensors service needs 5
+cycle of error to really treat the sensor as non-functional and update "nan"
+to the Value property. Totally, it needs over 25s since when the fan is
+unplugged for the sensor to show "nan". Therefore, phosphor-fan can only
+react to the failure after that amount of time.
+This patch omits changeing the polling time when the error code returned
+from reading hwmon is timeout. This helps phosphor-fan react faster to
+the fan failure.
+
+Signed-off-by: Chau Ly <chaul@amperecomputing.com>
+---
+ src/TachSensor.cpp | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/src/TachSensor.cpp b/src/TachSensor.cpp
+index 9a1ff7c..e26bce9 100644
+--- a/src/TachSensor.cpp
++++ b/src/TachSensor.cpp
+@@ -38,6 +38,7 @@
+ #include <vector>
+ 
+ static constexpr unsigned int pwmPollMs = 500;
++static constexpr unsigned int timeoutErrorCode = 110;
+ 
+ TachSensor::TachSensor(const std::string& path, const std::string& objectType,
+                        sdbusplus::asio::object_server& objectServer,
+@@ -184,7 +185,10 @@ void TachSensor::handleResponse(const boost::system::error_code& err,
+         else
+         {
+             incrementError();
+-            pollTime = sensorFailedPollTimeMs;
++            if (err.value() != timeoutErrorCode)
++            {
++                pollTime = sensorFailedPollTimeMs;
++            }
+         }
+     }
+
+-- 
+2.25.1

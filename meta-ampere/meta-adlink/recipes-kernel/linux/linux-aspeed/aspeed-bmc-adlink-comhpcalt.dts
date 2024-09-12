@@ -1,0 +1,414 @@
+// SPDX-License-Identifier: GPL-2.0+
+/dts-v1/;
+#include "aspeed-g5.dtsi"
+#include <dt-bindings/gpio/aspeed-gpio.h>
+#include <dt-bindings/leds/leds-pca955x.h>
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/i2c/i2c.h>
+
+/ {
+	model = "ADLINK COM-HPC-ALT BMC";
+	compatible = "ampere,comhpcalt-bmc", "aspeed,ast2500";
+
+	chosen {
+		stdout-path = &uart5;
+		bootargs = "console=ttyS4,115200 earlycon";
+	};
+
+	memory@80000000 {
+		reg = <0x80000000 0x20000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		vga_memory: framebuffer@9f000000 {
+			no-map;
+			reg = <0x9f000000 0x01000000>; /* 16M */
+		};
+
+		gfx_memory: framebuffer {
+			size = <0x01000000>;
+			alignment = <0x01000000>;
+			compatible = "shared-dma-pool";
+			reusable;
+		};
+
+		video_engine_memory: jpegbuffer {
+			size = <0x02000000>;	/* 32M */
+			alignment = <0x01000000>;
+			compatible = "shared-dma-pool";
+			reusable;
+		};
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		heartbeat {
+			  /* BMC_HB_LED */
+                          gpios = <&gpio ASPEED_GPIO(Y, 18) GPIO_ACTIVE_LOW>;
+                          linux,default-trigger = "timer";
+		};
+
+                identify {
+                          /* GPO_UID_LED */
+                          gpios = <&pca0 1 GPIO_ACTIVE_LOW>;
+                };
+
+                fault {
+                         /* GPO_SYS_RLED */
+                         gpios = <&pca0 3 GPIO_ACTIVE_LOW>;
+                };
+
+                sys-power {
+                        /* GPO_SYS_GLED */
+                        gpios = <&pca0 4 GPIO_ACTIVE_LOW>;
+                };
+
+                power {
+                        /* GPO_PWR_LED */
+                        gpios = <&pca0 5 GPIO_ACTIVE_LOW>;
+                };
+
+                fan-fail-led {
+                        /* FAN_FAIL_LED */
+                        gpios = <&pca0 7 GPIO_ACTIVE_LOW>;
+                };
+	};
+
+	iio-hwmon {
+		compatible = "iio-hwmon";
+
+                io-channels = <&adc 0>, <&adc 1>, <&adc 2>, <&adc 3>, <&adc 4>,
+                        <&adc 5>, <&adc 6>, <&adc 7>, <&adc 8>, <&adc 9>,
+                        <&adc 10>, <&adc 11>, <&adc 12>, <&adc 13>;
+	};
+};
+
+&fmc {
+	status = "okay";
+	flash@0 {
+		status = "okay";
+		m25p,fast-read;
+		label = "bmc";
+                spi-max-frequency = <133000000>;
+#include "aspeed-bmc-adlink-comhpcalt-flash.dtsi"
+	};
+
+	flash@1 {
+		status = "okay";
+		m25p,fast-read;
+		label = "alt-bmc";
+                spi-max-frequency = <133000000>;
+#include "aspeed-bmc-adlink-comhpcalt-flash-alt.dtsi"
+	};
+};
+
+&spi1 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_spi1_default>;
+
+	flash@0 {
+		status = "okay";
+		w25q;
+		label = "pnor-uefi";
+	};
+};
+
+&uart1 {
+        status = "okay";
+        pinctrl-names = "default";
+        pinctrl-0 = <&pinctrl_txd1_default
+                &pinctrl_rxd1_default
+                &pinctrl_nrts1_default
+                &pinctrl_ndtr1_default
+                &pinctrl_ndsr1_default
+                &pinctrl_ncts1_default
+                &pinctrl_ndcd1_default
+                &pinctrl_nri1_default>;
+};
+
+&uart2 {
+        status = "okay";
+        pinctrl-names = "default";
+        pinctrl-0 = <&pinctrl_txd2_default
+                         &pinctrl_rxd2_default
+                         &pinctrl_ncts2_default
+                         &pinctrl_nrts2_default>;
+};
+
+&uart3 {
+        status = "disabled";
+};
+
+&uart4 {
+        status = "disabled";
+};
+
+&uart5 {
+        status = "okay";
+};
+
+&uart_routing {
+        status = "okay";
+};
+
+&vuart {
+	status = "okay";
+};
+
+&mac0 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_rmii1_default>;
+	clocks = <&syscon ASPEED_CLK_GATE_MAC1CLK>,
+		 <&syscon ASPEED_CLK_MAC1RCLK>;
+	clock-names = "MACCLK", "RCLK";
+	use-ncsi;
+};
+
+&mac1 {
+	status = "disabled";
+};
+
+&i2c0 {
+        status = "okay";
+
+        // This bus has a connection to the host
+
+        pca0: pca9555@26 {
+                compatible = "nxp,pca9555";
+                reg = <0x26>;
+                #address-cells = <1>;
+                #size-cells = <0>;
+                gpio-controller;
+                #gpio-cells = <2>;
+
+                gpio-line-names = "bmc-ok", "",
+                                  "_identify-button", "",
+                                  "", "",
+                                  "RS_UID_BUT_P", "";
+
+                // I2C0_BMC_RDY_N
+                gpio@0 {
+                        reg = <0>;
+                        type = <PCA955X_TYPE_GPIO>;
+                };
+
+                // UID_BUT_P
+                gpio@2 {
+                        reg = <2>;
+                        type = <PCA955X_TYPE_GPIO>;
+                };
+
+                // GPO_SYS_GLED
+                led@4 {
+                        reg = <4>;
+                        type = <PCA955X_TYPE_LED>;
+                };
+
+                // RS_UID_BUT_P
+                gpio@6 {
+                        reg = <6>;
+                        type = <PCA955X_TYPE_GPIO>;
+                };
+        };
+
+        eeprom@50 { 
+                compatible = "atmel,24c256";
+                reg = <0x50>;
+        };
+};
+
+&i2c1 {
+        status = "okay";
+
+        rtc@51 {
+                compatible = "nxp,pcf85063a";
+                reg = <0x51>;
+        };
+};
+
+&i2c2 {
+        status = "okay";
+        multi-master;
+
+        // MMC BMC is at 0x41.
+        // Listen for responses at 0x10
+        ipmb0@10 {
+                compatible = "ipmb-dev";
+                reg = <0x10>;
+                i2c-protocol;
+        };
+};
+
+&i2c3 {
+        status = "okay";
+};
+
+&i2c4 {
+        status = "okay";
+
+        // This bus has a connection to the host
+
+        ssif-bmc@10 {
+                compatible = "ssif-bmc";
+                reg = <0x10>;
+        };
+};
+
+&i2c5 {
+        status = "okay";
+};
+
+&i2c6 {
+	status = "okay";
+
+        eeprom@50 {
+                compatible = "atmel,24c256";
+                reg = <0x50>;
+        };
+};
+
+&i2c7 {
+        status = "okay";
+
+        front_temp: tmp112@48 {
+                compatible = "ti,tmp112";
+                reg = <0x48>;
+        };
+
+        rear_temp: tmp112@49 {
+                compatible = "ti,tmp112";
+                reg = <0x49>;
+        };
+};
+
+&i2c8 {
+        status = "disabled";
+};
+
+&i2c9 {
+        status = "disabled";
+};
+
+&i2c10 {
+        status = "disabled";
+};
+
+&i2c11 {
+        status = "disabled";
+};
+
+&i2c12 {
+        status = "disabled";
+};
+
+&i2c13 {
+        status = "disabled";
+};
+
+&gfx {
+        status = "okay";
+        memory-region = <&gfx_memory>;
+};
+
+&pinctrl {
+        aspeed,external-nodes = <&gfx &lhc>;
+};
+
+&pwm_tacho {
+        status = "okay";
+        pinctrl-names = "default";
+        pinctrl-0 = <&pinctrl_pwm0_default &pinctrl_pwm1_default
+                        &pinctrl_pwm3_default
+                        &pinctrl_pwm4_default>;
+
+        fan@0 {
+                reg = <0x00>;
+                aspeed,fan-tach-ch = /bits/ 8 <0x00>;
+        };
+
+        fan@1 {
+                reg = <0x01>;
+                aspeed,fan-tach-ch = /bits/ 8 <0x01>;
+        };
+
+        fan@3 {
+                reg = <0x03>;
+                aspeed,fan-tach-ch = /bits/ 8 <0x03>;
+        };
+
+        fan@4 {
+                reg = <0x04>;
+                aspeed,fan-tach-ch = /bits/ 8 <0x04>;
+        };
+};
+
+&vhub {
+        status = "okay";
+};
+
+&adc {
+        status = "okay";
+        pinctrl-names = "default";
+        pinctrl-0 = <&pinctrl_adc0_default
+                        &pinctrl_adc1_default
+                        &pinctrl_adc2_default
+                        &pinctrl_adc3_default
+                        &pinctrl_adc4_default
+                        &pinctrl_adc5_default
+                        &pinctrl_adc6_default
+                        &pinctrl_adc7_default
+                        &pinctrl_adc8_default
+                        &pinctrl_adc9_default
+                        &pinctrl_adc10_default
+                        &pinctrl_adc11_default
+                        &pinctrl_adc12_default
+			&pinctrl_adc13_default>;
+};
+
+&video {
+        status = "okay";
+        memory-region = <&video_engine_memory>;
+};
+
+&gpio {
+	/* NOTE: there isn't a MUX to switch between carrier and module EEPROM, so pick an unused line for
+	         spi0-backup-sel */
+        gpio-line-names =
+        /*A0-A7*/       "MAC1LINK","MAC2LINK","TIMER3_SPI1CS1","TIMER4","TIMER5_SCL9","TIMER6_SDA9","","",
+        /*B0-B7*/       "","","","","USBCKI","LPCPD_LPCSMI","LPCPME","",
+        /*C0-C7*/       "SD1CLK_SCL10","SD1CMD_SDA10","SD1DAT0_SCL11","SD1DAT1_SDA11","SD1DAT2_SCL12","SD1DAT3_SDA12","SD1CD_SCL13","SD1WP_SDA13",
+        /*D0-D7*/       "SD2CLK","SD2CMD","SD2DAT0","SD2DAT1","SD2DAT2","SD2DAT3","SD2CD","SD2WP",
+        /*E0-E7*/       "reset-button","NDCD3","NDSR3","NRI3","power-chassis-good","NRTS3","TXD3","RXD3",
+        /*F0-F7*/       "NCTS4_LHAD0","NDCD5_LHAD1","NDSR4_LDAD2","NRI4_LHAD3","NDTR4_LHCLK","NRTS4_LHFRAME","TXD4_LHSRQ","RXD4_LSRST",
+        /*G0-G7*/       "","","","","","","","",
+        /*H0-H7*/       "spi0-program-sel","NDCD6","NDSR6","NRI6","NDTR6","NRTS6","TXD6","RXD6",
+        /*I0-I7*/       "","","","","","","","",
+        /*J0-J7*/       "","","","","","","","",
+        /*K0-K7*/       "SCL5","SDA5","SCL6","SDA6","SCL7","SDA5","SCL8","SDA8",
+        /*L0-L7*/       "NCTS1","NDCD1_VPIDE","NDSR1","NRI1_VPIHS","NDTR1_VPIVS","NRTS1_VPICLK","TXD1","RXD1",
+        /*M0-M7*/       "NCTS2_VPIB2","NDCD2_VPIB3","NDCR2_VPIB4","NRI2_VPIB5","NDTR2_VPIB6","NRTS2_VPIB7","TXD2_VPIB8","RXD2_VPIB9",
+        /*N0-N7*/       "PWM0","PWM1","PWM2_VPIG2","PWM3_VPIG3","PWM4_VPIG4","PWM5_VPIG5","PWM6_VPIG6","PWM7_VPIG7",
+        /*O0-O7*/       "TACH0_VPIG8","TACH1_VPIG9","TACH2","TACH3","TACH4_VPIR2","TACH5_VPIR3","TACH6_VPIR4","TACH7_VPIR5",
+        /*P0-P7*/       "TACH8_VPIR6","TACH9_VPIR7","TACH10_VPIR8","TACH11_VPIR9","TACH12","spi0-backup-sel","TACH14","bmc-ready",
+        /*Q0-Q7*/       "SCL3","SDA3","SCL4","SDA4","SCL14","SDA14","OSCCLK","PEWAKE",
+        /*R0-R7*/       "FWSPICS1","FWSPICS2","SPI2CS0","SPI2CK","SPI2MOSI","SPI2MISO","","",
+        /*S0-S7*/       "VPOB2_SPI2CS1","VPOB2_BMCINT","VPOB4_SALT5","VPOB5_SALT6","VPOB6","VPO7","VPO8","VPO9",
+        /*T0-T7*/       "","","","","","","","",
+        /*U0-U7*/       "","","","","","","","",
+        /*V0-V7*/       "","","","","","","","",
+        /*W0-W7*/       "ADC0","ADC1","ADC2","ADC3","ADC4","ADC5","ADC6","ADC7",
+        /*X0-X7*/       "ADC8","ADC9","ADC10","ADC11","ADC12","ADC13","ADC14","ADC15",
+        /*Y0-Y7*/       "SIOS3","SIOS5","SIOPWREQ","SIOONCTRL","SCL1","SDA1","SCL2","SDA2",
+        /*Z0-Z7*/       "VPOG2_NORA0_SIOPBI","VPOG3_NORA1_SIOPWRGD","power-chassis-control","VPO5_NORA3_SIOSCI","VPOG6_NORA4","VPOG7_NORA5","VPOG8_NORA6","VPOG9_NORA7",
+        /*AA0-AA7*/     "VPOR2_NORD0_SALT7","VPOR3_NORD1_SALT8","VPOR4_NORD2_SALT9","VPOR5_NORD3_SALT10","VPOR6_NORD4_SALT11","VPOR7_NORD5_SALT12","VPOR8_NORD6_SALT13","VPOR9_NORD7_SALT14",
+        /*AB0-AB7*/     "VPODE_NOREO","VPOHS_NORWE","VPOVS_WDTRST1","VPOCLK_WDTRST2","","","","",
+        /*AC0-AC7*/     "ESPID0_LAD0","ESPID1_LAD1","ESPI2_LAD2","ESPI3_LAD3","ESPICK_LCLK","ESPICS_LFRAME","ESPIALT_LSIRQ","ESPIRST_LPCRST";
+};
