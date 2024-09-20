@@ -1,0 +1,6 @@
+[Unit]
+Description= Notify that total power consumption exceeds the power cap
+
+[Service]
+ExecStart=/usr/sbin/power_cap_exceed_limit.sh
+Type=oneshot
