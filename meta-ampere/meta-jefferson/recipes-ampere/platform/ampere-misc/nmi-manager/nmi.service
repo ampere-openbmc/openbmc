@@ -1,0 +1,6 @@
+[Unit]
+Description= Trigger NMI via PLDM service
+
+[Service]
+ExecStart=busctl set-property xyz.openbmc_project.PLDM /xyz/openbmc_project/effecters/count/S0_Effecter_204 xyz.openbmc_project.Sensor.Value Value d 2
+Type=oneshot
