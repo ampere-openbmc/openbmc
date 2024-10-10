@@ -1,0 +1,6 @@
+[Unit]
+Description=Ampere Computing LLC Sys Auth Failure event service
+
+[Service]
+Restart=no
+ExecStart=/usr/sbin/ampere_sys_auth_failure.sh %i
