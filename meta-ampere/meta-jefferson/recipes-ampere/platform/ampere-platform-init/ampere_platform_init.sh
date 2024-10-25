@@ -48,7 +48,7 @@ function fan_controller_init() {
 
 # Setting default value for device sel and mux
 bootstatus=$(cat /sys/class/watchdog/watchdog0/bootstatus)
-if [ "$bootstatus" == '32' ]; then
+if [ "$bootstatus" == 0 ]; then
     echo "Initialize output GPIOs after AC power"
     gpioset $(gpiofind spi0-backup-sel)=1  # Select primary CPU's SPI
     gpioset $(gpiofind spi0-program-sel)=0 # Switch SPI-NOR to Host
