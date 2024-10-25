@@ -10,7 +10,7 @@ pre-platform-init
 # =======================================================
 # Setting default value for device sel and mux
 bootstatus=$(cat /sys/class/watchdog/watchdog0/bootstatus)
-if [ "$bootstatus" == '32' ]; then
+if [ "$bootstatus" == 0 ]; then
     echo "CONFIGURE: gpio pins to output high after AC power"
     for gpioName in "${output_high_gpios_in_ac[@]}"; do
         gpioset $(gpiofind "$gpioName")=1
