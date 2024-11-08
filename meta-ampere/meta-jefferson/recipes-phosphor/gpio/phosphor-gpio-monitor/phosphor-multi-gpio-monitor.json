@@ -29,5 +29,12 @@
           "RISING": ["ampere_hightemp_stop@0.service"]
         },
         "Continue": true
+    },
+    {
+        "Name": "NMI_BUTTON",
+        "LineName": "nmi-button",
+        "EventMon": "FALLING",
+        "Target": "nmi.service",
+        "Continue": true
     }
 ]
