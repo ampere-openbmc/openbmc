@@ -4,6 +4,7 @@ inherit obmc-phosphor-systemd
 
 SRC_URI:append = " \
                   file://${BPN}.service \
+                  file://0001-Append-to-MissingIsAcceptable-handling.patch \
                  "
 
 do_install:append() {
