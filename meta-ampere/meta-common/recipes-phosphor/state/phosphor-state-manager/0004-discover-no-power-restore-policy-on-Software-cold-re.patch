@@ -1,0 +1,41 @@
+From d970aea1450185474219219394166f744fe8de4f Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Fri, 11 Oct 2024 14:20:10 +0700
+Subject: [PATCH] discover: no power restore policy on Software cold reset
+
+As defined in the PDIs [1], the RebootCause can be Software. In that
+case, BMC does not have to check power restore policy.
+
+This commit adds condition to check RebootCause and updates the info log
+for RebootCause::Watchdog.
+
+[1] https://github.com/openbmc/phosphor-dbus-interfaces/blob/master/yaml/xyz/openbmc_project/State/BMC.interface.yaml#L70
+
+Upstream-Status: Pending
+
+Change-Id: I255f52a4008ae1dbf3db69e33471f9d23e0552a0
+Signed-off-by: Thang Tran <thuutran@amperecomputing.com>
+---
+ discover_system_state.cpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/discover_system_state.cpp b/discover_system_state.cpp
+index cadaedd..04b28a3 100644
+--- a/discover_system_state.cpp
++++ b/discover_system_state.cpp
+@@ -97,6 +97,12 @@ int main(int argc, char** argv)
+         return 0;
+     }
+     else if (bmcRebootCause == BMC::RebootCause::Watchdog)
++    {
++        info(
++            "BMC was reset due to watchdog, no power restore policy will be run");
++        return 0;
++    }
++    else if (bmcRebootCause == BMC::RebootCause::Software)
+     {
+         info(
+             "BMC was reset due to cold reset, no power restore policy will be run");
+--
+2.25.1
+
