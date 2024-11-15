@@ -1,0 +1,134 @@
+From 7491c4c99dadb0bb3e37882468107a987381db33 Mon Sep 17 00:00:00 2001
+From: Chaul Ly <chaul@amperecomputing.com>
+Date: Fri, 15 Nov 2024 10:20:28 +0000
+Subject: [PATCH] Append to MissingIsAcceptable handling
+
+This commit adds more behavior to the current handling of
+MissingIsAcceptable list to adapt Ampere thermal control requirements.
+
+Upstream-Status: Pending
+
+Signed-off-by: Chaul Ly <chaul@amperecomputing.com>
+---
+ dbus/dbusconfiguration.cpp | 45 ++++++++++++++++++++++++++++++++------
+ dbus/dbuspassive.cpp       | 24 ++++++++++++++++++--
+ 2 files changed, 60 insertions(+), 9 deletions(-)
+
+diff --git a/dbus/dbusconfiguration.cpp b/dbus/dbusconfiguration.cpp
+index 7905e28..54af5e6 100644
+--- a/dbus/dbusconfiguration.cpp
++++ b/dbus/dbusconfiguration.cpp
+@@ -996,17 +996,26 @@ bool init(sdbusplus::bus_t& bus, boost::asio::steady_timer& timer,
+                     if (!findSensors(sensors, sensorNameToDbusName(sensorName),
+                                      sensorPathIfacePairs))
+                     {
+-                        break;
++                        if (std::find(missingAcceptableSensorNames.begin(),
++                                missingAcceptableSensorNames.end(), sensorName)
++                                != missingAcceptableSensorNames.end())
++                        {
++                            // When an input sensor is NOT on DBus, and it's in the MissingIsAcceptable
++                            // list. Ignore it and continue with the next input sensor.
++                            std::cout << "Missing a missing-acceptable sensor from DBUS " << sensorName << "\n";
++                            continue;
++                        }
+                     }
+-
+-                    for (const auto& sensorPathIfacePair : sensorPathIfacePairs)
++                    if (sensorPathIfacePairs.empty())
+                     {
+-                        std::string shortName =
+-                            getSensorNameFromPath(sensorPathIfacePair.first);
++                        // When an input sensor is NOT on DBus, and it's NOT in the MissingIsAcceptable
++                        // list. Build it as a failed sensor with default information (temp sensor path, temp type, ...)
++                        std::cerr << "Missing a missing-UNacceptable sensor from DBUS " << sensorName << "\n";
++                        std::string shortName = sensorNameToDbusName(sensorName);
+
+                         inputs.push_back(shortName);
+                         auto& config = sensorConfig[shortName];
+-                        config.readPath = sensorPathIfacePair.first;
++                        config.readPath = "/xyz/openbmc_project/sensors/temperature/" + shortName;
+                         config.type = "temp";
+                         config.ignoreDbusMinMax = true;
+                         config.unavailableAsFailed = unavailableAsFailed;
+@@ -1016,6 +1025,25 @@ bool init(sdbusplus::bus_t& bus, boost::asio::steady_timer& timer,
+                         config.timeout = 0;
+                         sensorFound = true;
+                     }
++                    {
++                        for (const auto& sensorPathIfacePair : sensorPathIfacePairs)
++                        {
++                            std::string shortName =
++                                getSensorNameFromPath(sensorPathIfacePair.first);
++
++                            inputs.push_back(shortName);
++                            auto& config = sensorConfig[shortName];
++                            config.readPath = sensorPathIfacePair.first;
++                            config.type = "temp";
++                            config.ignoreDbusMinMax = true;
++                            config.unavailableAsFailed = unavailableAsFailed;
++                            // todo: maybe un-hardcode this if we run into slower
++                            // timeouts with sensors
++
++                            config.timeout = 0;
++                            sensorFound = true;
++                        }
++                    }
+                 }
+                 if (!sensorFound)
+                 {
+@@ -1033,7 +1061,10 @@ bool init(sdbusplus::bus_t& bus, boost::asio::steady_timer& timer,
+                             sensorNameToDbusName(missingAcceptableSensorName),
+                             sensorPathIfacePairs))
+                     {
+-                        break;
++                        // When a sensor in the MissingIsAcceptable list is NOT on DBus
++                        // and it still reaches here, which contradicts to what we did in
++                        // the Input sensor building step. Continue.
++                        continue;
+                     }
+
+                     for (const auto& sensorPathIfacePair : sensorPathIfacePairs)
+diff --git a/dbus/dbuspassive.cpp b/dbus/dbuspassive.cpp
+index aa4cbaf..9cc0aae 100644
+--- a/dbus/dbuspassive.cpp
++++ b/dbus/dbuspassive.cpp
+@@ -66,13 +66,33 @@ std::unique_ptr<ReadInterface> DbusPassive::createDbusPassive(
+     try
+     {
+         std::string service = helper->getService(sensorintf, path);
+-
+         helper->getProperties(service, path, &settings);
+         failed = helper->thresholdsAsserted(service, path);
+     }
+     catch (const std::exception& e)
+     {
+-        return nullptr;
++        // CASE1: The sensor is not on DBus, but as it is not in the MissingIsAcceptable list,
++        // the sensor should be built with a failed state to send the zone to failsafe mode.
++        // Everything will recover if all important sensors are back to DBus. swampd will be
++        // informed through InterfacesAdded signal.
++
++        // CASE2: The sensor is in the MissingIsAcceptable list and it EXISTS on DBus
++        // (which sends it all the way here).
++        // However, swampd fails to initialize its setting here because of some DBus error???
++        // (getService/getProperties/getThresholdAssertion). Build it as a failed sensor too.
++        // A DBus signal will inform if there's s new property value to the sensor and will
++        // recover its state when the new value is valid.
++
++        // In both cases, the Sensor::getFailed() and DbusPidZone::markSensorMissing() APIs
++        // will decide whether to add a failed sensor to the _failSafeSensors list or not.
++        // As _failed=false) and _badReading=false (due to updateValue(nan, true)), both cases
++        // will have getFailed() = true;
++        // However as CASE2 has the sensor in MissingIsAcceptable list, only CASE1 will send
++        // the zone to failSafe mode.
++        failed = false;
++        settings.value = std::numeric_limits<double>::quiet_NaN();
++        settings.unit = "xyz.openbmc_project.Sensor.Value.Unit.DegreesC";
++        std::cerr << "DbusPassive: Sensor " << path << " is missing from DBUS, build this sensor as failed\n";
+     }
+
+     /* if these values are zero, they're ignored. */
+--
+2.34.1
+
