@@ -1,0 +1,95 @@
+From a07308adfbaae353af71ed6e810d431c895b01e0 Mon Sep 17 00:00:00 2001
+From: Huy Le Anh <hule@amperecomputing.com>
+Date: Mon, 2 Dec 2024 15:01:41 +0700
+Subject: [PATCH] Fix the error preventing user edits
+
+The main cause is that it gets stuck when calling the password
+dependency. However, the exact reason for this is unknown. Therefore,
+to fix this issue, I have written a new function to handle it.
+
+Tested:
+1. Log in to BMC Web and go to the user-management.
+2. Adding a new user is successful.
+3. Editing a user is successful.
+
+Upstream-Status: Pending
+
+Signed-off-by: Huy Le Anh <hule@amperecomputing.com>
+---
+ .../UserManagement/ModalUser.vue              | 24 +++++++++++++++----
+ 1 file changed, 20 insertions(+), 4 deletions(-)
+
+diff --git a/src/views/SecurityAndAccess/UserManagement/ModalUser.vue b/src/views/SecurityAndAccess/UserManagement/ModalUser.vue
+index 3b33487..f8cc505 100644
+--- a/src/views/SecurityAndAccess/UserManagement/ModalUser.vue
++++ b/src/views/SecurityAndAccess/UserManagement/ModalUser.vue
+@@ -234,8 +234,9 @@ import {
+   maxLength,
+   minLength,
+   requiredIf,
++  sameAs,
+ } from '@vuelidate/validators';
+-import { helpers, sameAs } from 'vuelidate/lib/validators';
++import { helpers } from 'vuelidate/lib/validators';
+ import VuelidateMixin from '@/components/Mixins/VuelidateMixin.js';
+ import { useVuelidate } from '@vuelidate/core';
+ 
+@@ -274,6 +275,7 @@ export default {
+         manualUnlock: false,
+       },
+       disabled: this.$store.getters['global/username'],
++      isDirty: false,
+     };
+   },
+   computed: {
+@@ -289,6 +291,9 @@ export default {
+     privilegeTypes() {
+       return this.$store.getters['userManagement/accountRoles'];
+     },
++    computedForm: function () {
++      return Object.assign({}, this.form);
++    },
+   },
+   watch: {
+     user: function (value) {
+@@ -298,6 +303,18 @@ export default {
+       this.form.status = value.Enabled;
+       this.form.privilege = value.privilege;
+     },
++    computedForm: {
++      deep: true,
++      handler: function (n, o) {
++        let isDirty = false;
++        if (n.password !== o.password) {
++          isDirty = true;
++        } else if (n.passwordConfirmation !== o.passwordConfirmation) {
++          isDirty = true;
++        }
++        this.isDirty = isDirty;
++      },
++    },
+   },
+   validations() {
+     return {
+@@ -324,7 +341,7 @@ export default {
+           required: requiredIf(function () {
+             return this.requirePassword();
+           }),
+-          sameAsPassword: sameAs('password'),
++          sameAsPassword: sameAs(this.form.password),
+         },
+         manualUnlock: {},
+       },
+@@ -387,8 +404,7 @@ export default {
+     },
+     requirePassword() {
+       if (this.newUser) return true;
+-      if (this.v$.form.password.$dirty) return true;
+-      if (this.v$.form.passwordConfirmation.$dirty) return true;
++      if (this.isDirty) return true;
+       return false;
+     },
+     onOk(bvModalEvt) {
+-- 
+2.25.1
+

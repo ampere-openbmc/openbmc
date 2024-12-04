@@ -9,4 +9,5 @@ SRC_URI += "\
             file://0006-Parsing-string-arguments-for-Account-policy-settings.patch \
             file://0007-Fix-date-time-format-regex-check.patch \
             file://0008-Bios-Option-Remove-oneTimeBootEnabled-check.patch \
+            file://0009-Fix-the-error-preventing-user-edits.patch \
            "
