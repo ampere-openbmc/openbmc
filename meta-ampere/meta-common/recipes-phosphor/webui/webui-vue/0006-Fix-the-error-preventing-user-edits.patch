@@ -1,0 +1,163 @@
+From dec5f925a819c02e8858dd1ba7da3c29d7affdb4 Mon Sep 17 00:00:00 2001
+From: Huy Anh Le <hule@amperecomputing.com>
+Date: Tue, 21 Jan 2025 03:26:43 +0000
+Subject: [PATCH] Fix the error preventing user edits
+
+The main cause is that it gets stuck when calling the password
+dependency. However, the exact reason for this is unknown. Therefore,
+to fix this issue, I have written a new function to handle it.
+
+Tested:
+1. Log in to BMC Web and go to the user-management.
+2. Adding a new user is successful.
+3. Editing a user is successful.
+
+Upstream-Status: Pending
+
+Signed-off-by: Huy Anh Le <hule@amperecomputing.com>
+---
+ .../UserManagement/ModalUser.vue              | 73 ++++++++++++++++---
+ 1 file changed, 64 insertions(+), 9 deletions(-)
+
+diff --git a/src/views/SecurityAndAccess/UserManagement/ModalUser.vue b/src/views/SecurityAndAccess/UserManagement/ModalUser.vue
+index 3b33487..5f839f1 100644
+--- a/src/views/SecurityAndAccess/UserManagement/ModalUser.vue
++++ b/src/views/SecurityAndAccess/UserManagement/ModalUser.vue
+@@ -14,7 +14,7 @@
+         <b-row v-if="!newUser && manualUnlockPolicy && user.Locked">
+           <b-col sm="9">
+             <alert :show="true" variant="warning" small>
+-              <template v-if="!v$.form.manualUnlock.$dirty">
++              <template v-if="!isDirty.manualUnlock">
+                 {{ $t('pageUserManagement.modal.accountLocked') }}
+               </template>
+               <template v-else>
+@@ -30,7 +30,7 @@
+             />
+             <b-button
+               variant="primary"
+-              :disabled="v$.form.manualUnlock.$dirty"
++              :disabled="isDirty.manualUnlock"
+               data-test-id="userManagement-button-manualUnlock"
+               @click="v$.form.manualUnlock.$touch()"
+             >
+@@ -273,6 +273,14 @@ export default {
+         passwordConfirmation: '',
+         manualUnlock: false,
+       },
++      isDirty: {
++        status: false,
++        username: false,
++        privilege: false,
++        password: false,
++        passwordConfirmation: false,
++        manualUnlock: false,
++      },
+       disabled: this.$store.getters['global/username'],
+     };
+   },
+@@ -289,6 +297,16 @@ export default {
+     privilegeTypes() {
+       return this.$store.getters['userManagement/accountRoles'];
+     },
++    computedForm() {
++      return {
++        status: this.form.status,
++        username: this.form.username,
++        privilege: this.form.privilege,
++        password: this.form.password,
++        passwordConfirmation: this.form.passwordConfirmation,
++        manualUnlock: this.form.manualUnlock,
++      };
++    },
+   },
+   watch: {
+     user: function (value) {
+@@ -298,6 +316,34 @@ export default {
+       this.form.status = value.Enabled;
+       this.form.privilege = value.privilege;
+     },
++    computedForm: {
++      deep: true,
++      handler: function (n, o) {
++        if (n.status !== o.status) {
++          this.isDirty.status = true;
++        }
++
++        if (n.username !== o.username) {
++          this.isDirty.username = true;
++        }
++
++        if (n.privilege !== o.privilege) {
++          this.isDirty.privilege = true;
++        }
++
++        if (n.password !== o.password) {
++          this.isDirty.password = true;
++        }
++
++        if (n.passwordConfirmation !== o.passwordConfirmation) {
++          this.isDirty.passwordConfirmation = true;
++        }
++
++        if (n.manualUnlock !== o.manualUnlock) {
++          this.isDirty.manualUnlock = true;
++        }
++      },
++    },
+   },
+   validations() {
+     return {
+@@ -344,19 +390,20 @@ export default {
+       } else {
+         if (this.v$.$invalid) return;
+         userData.originalUsername = this.originalUsername;
+-        if (this.v$.form.status.$dirty) {
++
++        if (this.isDirty.status) {
+           userData.status = this.form.status;
+         }
+-        if (this.v$.form.username.$dirty) {
++        if (this.isDirty.username) {
+           userData.username = this.form.username;
+         }
+-        if (this.v$.form.privilege.$dirty) {
++        if (this.isDirty.privilege) {
+           userData.privilege = this.form.privilege;
+         }
+-        if (this.v$.form.password.$dirty) {
++        if (this.isDirty.password) {
+           userData.password = this.form.password;
+         }
+-        if (this.v$.form.manualUnlock.$dirty) {
++        if (this.isDirty.manualUnlock) {
+           // If form manualUnlock control $dirty then
+           // set user Locked property to false
+           userData.locked = false;
+@@ -382,13 +429,21 @@ export default {
+       this.form.privilege = null;
+       this.form.password = '';
+       this.form.passwordConfirmation = '';
++
++      this.isDirty.status = false;
++      this.isDirty.username = false;
++      this.isDirty.privilege = false;
++      this.isDirty.password = false;
++      this.isDirty.passwordConfirmation = false;
++      this.isDirty.manualUnlock = false;
++
+       this.v$.$reset();
+       this.$emit('hidden');
+     },
+     requirePassword() {
+       if (this.newUser) return true;
+-      if (this.v$.form.password.$dirty) return true;
+-      if (this.v$.form.passwordConfirmation.$dirty) return true;
++      if (this.isDirty.password) return true;
++      if (this.isDirty.passwordConfirmation) return true;
+       return false;
+     },
+     onOk(bvModalEvt) {
+-- 
+2.43.0
+
