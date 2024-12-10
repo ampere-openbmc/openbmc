@@ -1,0 +1,26 @@
+From 876915c3d57a138bb3a8e4ead552db309ffabf4b Mon Sep 17 00:00:00 2001
+From: Nhat Hieu Le <hieul@amperecomputing.com>
+Date: Tue, 10 Dec 2024 17:24:14 +0700
+Subject: [PATCH] meta-ampere: Fix compilation error for uboot in styhead
+
+Upstream-Status: Pending
+
+Signed-off-by: Nhat Hieu Le <hieul@amperecomputing.com>
+---
+ arch/arm/include/asm/arch-aspeed/ast_scu.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/arch/arm/include/asm/arch-aspeed/ast_scu.h b/arch/arm/include/asm/arch-aspeed/ast_scu.h
+index dcbc6730d4..396de7a897 100644
+--- a/arch/arm/include/asm/arch-aspeed/ast_scu.h
++++ b/arch/arm/include/asm/arch-aspeed/ast_scu.h
+@@ -46,4 +46,6 @@ extern void ast_scu_init_eth(u8 num);
+ extern void ast_scu_multi_func_eth(u8 num);
+ extern void ast_scu_multi_func_romcs(u8 num);
+ 
++extern void ast_scu_spi_master(u8 mode);
++
+ #endif
+-- 
+2.25.1
+
