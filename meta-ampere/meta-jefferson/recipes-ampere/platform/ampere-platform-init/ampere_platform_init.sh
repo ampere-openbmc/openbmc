@@ -3,6 +3,9 @@
 # shellcheck disable=SC2154
 # shellcheck disable=SC2046
 
+EEPROM_DEVICE="10-0050"
+EEPROM_PATCH="/sys/bus/i2c/devices/$EEPROM_DEVICE/eeprom"
+
 function fan_controller_init() {
     # Check the ADT7462 driver binded before
     ADT7462=/sys/bus/i2c/drivers/adt7462/8-005c
@@ -73,6 +76,15 @@ gpioset $(gpiofind spi-nor-access)=0       # Deassert BMC access SPI-NOR pin
 gpioset $(gpiofind host0-special-boot)=0   # Deassert SPECIAL_BOOT GPIO pin
 gpioset $(gpiofind cpu-bios-recover)=0     # BIOS recovery enable from BMC
 gpioset $(gpiofind s01-uart1-sel)=1        # Select Mpro0 as defaut
+
+# The at24.c driver probes the Host EEPROM each time BMC boot up. It's will hold
+# bus 10 address 0x50 of Host EEPROM. Therefore, nvparm can not access this bus
+# to read the NVPBERLY.
+# Unbind the Host EEPROM in platform-init to ensure the at24.c driver does not
+# hold the Host EEPROM's bus.
+if [ -f $EEPROM_PATCH ]; then
+    echo "$EEPROM_DEVICE" > /sys/bus/i2c/drivers/at24/unbind
+fi
 
 # When BMC is rebooted, because PSON_L has pull up to P3V3_STB, it changes its
 # value to HIGH. Add code to check P3V3_STB and recover PSON_L to correct state
