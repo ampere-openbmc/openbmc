@@ -9,6 +9,9 @@
 # Syntax for EEPROM:
 #    ampere_firmware_upgrade.sh eeprom <image>
 #
+# Syntax for SOC FRU:
+#    ampere_firmware_upgrade.sh socfru <image>
+#
 # Syntax for Mainboard CPLD:
 #    ampere_firmware_upgrade.sh main_cpld <image>
 #
@@ -17,6 +20,102 @@
 #
 
 # shellcheck disable=SC2046
+
+EEPROM_DEVICE="10-0050"
+EEPROM_PATCH="/sys/bus/i2c/devices/$EEPROM_DEVICE/eeprom"
+
+release_eeprom_device() {
+	# Unbind the EEPROM device
+	if [ -f $EEPROM_PATCH ]; then
+		echo "$EEPROM_DEVICE" > /sys/bus/i2c/drivers/at24/unbind
+	fi
+
+	# Switch EEPROM control to HOST BMC_GPIOW6_SPI0_PROGRAM_SEL
+	gpioset $(gpiofind spi0-program-sel)=0
+}
+
+do_socfru_flash() {
+	FIRMWARE_IMAGE=$IMAGE
+	OFFSET=2048 # 0x800 in decimal
+	MAX_SIZE=2048 # Allowed size from 0x800 to 0x1000 (2048 bytes)
+	SIGNATURE_EXPECTED="FRUDVERS" # Signature of FRU data version
+
+	# Turn off the Host if it is currently ON
+	previous_chassis_state=$(obmcutil chassisstate | awk -F. '{print $NF}')
+	echo "Current Chassis State: $previous_chassis_state"
+	if [ "$previous_chassis_state" == 'On' ]; then
+		echo "Turning the Chassis off"
+		obmcutil poweroff
+
+		# Check if HOST was OFF
+		cnt=60 # 60s time out in wait for Host On
+		while [ $cnt -gt 0 ];
+		do
+			chassisstate_off=$(obmcutil chassisstate | awk -F. '{print $NF}')
+			if [ "$chassisstate_off" == 'Off' ]; then
+				break
+			fi
+			sleep 2
+			cnt=$((cnt - 2))
+		done
+		if [[ "$cnt" == "0" ]]; then
+			echo "Error : Failed turning the Chassis off"
+			exit 1
+		fi
+	fi
+
+	# Get size of SOC FRU input file
+	FILE_SIZE=$(wc -c < "$FIRMWARE_IMAGE")
+
+	# Check if input file exceeds allowed size
+	if [ "$FILE_SIZE" -gt $MAX_SIZE ]; then
+		echo "Error: Input file size ($FILE_SIZE bytes) exceeds maximum allowed size ($MAX_SIZE bytes)"
+		exit 1
+	fi
+
+	# Read first 8 bytes of input file
+	DATA_VERSION_SIGNATURE=$(dd if="$FIRMWARE_IMAGE" bs=1 count=8 2>/dev/null | tr -d '\000')
+
+	# Check if the first 8 bytes match the expected signature
+	if [ "$DATA_VERSION_SIGNATURE" == "$SIGNATURE_EXPECTED" ]; then
+		echo "===== SOC FRU $FIRMWARE_IMAGE is valid ====="
+
+		# Switch EEPROM control to BMC BMC_GPIOW6_SPI0_PROGRAM_SEL
+		gpioset $(gpiofind spi0-program-sel)=1
+
+		# The EEPROM (AT24C64WI) with address 0x50 at BMC_I2C11 bus
+		# Bind the EEPROM device
+		if [ ! -f $EEPROM_PATCH ]; then
+			echo "$EEPROM_DEVICE" > /sys/bus/i2c/drivers/at24/bind
+		fi
+
+		# Write the SOC FRU file to EEPROM
+		echo "Writing SOC FRU $FIRMWARE_IMAGE ($FILE_SIZE bytes) to EEPROM at offset 0x800"
+		dd if="$FIRMWARE_IMAGE" of="$EEPROM_PATCH" bs=1 seek=$OFFSET 2>/dev/null
+		echo "===== SOC FRU update complete ======"
+
+		# Verify written data
+		echo "Verifying EEPROM data"
+		if cmp -n "$FILE_SIZE" "$FIRMWARE_IMAGE" <(dd if="$EEPROM_PATCH" bs=1 skip=$OFFSET count="$FILE_SIZE" 2>/dev/null); then
+			echo "===== EEPROM vefification successful ====="
+		else
+			echo "Error: EEPROM verification failed!"
+			release_eeprom_device
+			exit 1
+		fi
+
+		# Release EEPROM device
+		release_eeprom_device
+	else
+		echo "Error: EEPROM does not contain $SIGNATURE_EXPECTED"
+		exit 1
+	fi
+
+	if [ "$previous_chassis_state" == 'On' ]; then
+		echo "Turn on the Host"
+		systemctl start turn-on-the-host-after-flash@60
+	fi
+}
 
 do_eeprom_flash() {
 	FIRMWARE_IMAGE=$IMAGE
@@ -112,6 +211,8 @@ if [ $# -eq 0 ]; then
 	echo "Usage:"
 	echo "  - Flash Boot EEPROM"
 	echo "     $(basename "$0") eeprom <Image file>"
+	echo "  - Flash SOC FRU EEPROM"
+	echo "     $(basename "$0") socfru <Image file>"
 	echo "  - Flash FRU"
 	echo "     $(basename "$0") fru <Image file> [dev]"
 	echo "    Where:"
@@ -134,6 +235,8 @@ fi
 if [[ $TYPE == "eeprom" ]]; then
 	# Run EEPROM update: write/read/validation with CRC32 checksum
 	do_eeprom_flash "$IMAGE"
+elif [[ $TYPE == "socfru" ]]; then
+	do_socfru_flash "$IMAGE"
 elif [[ $TYPE == "fru" ]]; then
 	# Run FRU update
 	do_fru_flash "$IMAGE" "$DEV_SEL"
