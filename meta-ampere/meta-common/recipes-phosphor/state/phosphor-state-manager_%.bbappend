@@ -1,6 +1,6 @@
 FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
 
-PACKAGECONFIG:append = " host-gpio"
+PACKAGECONFIG:append = " host-gpio check-fwupdate-before-do-transition"
 
 SRC_URI += " \
               file://ampere-phosphor-reboot-host@.service \
