@@ -1,0 +1,49 @@
+From 8690f3380c50f3815e2d63583a418fd3114503cc Mon Sep 17 00:00:00 2001
+From: Chanh Nguyen <chanh@os.amperecomputing.com>
+Date: Thu, 12 Dec 2024 11:46:10 +0000
+Subject: [PATCH 1/2] Fix mismatch speed data type
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+A mismatch data type will happen when unplugging the
+ethernet cable; the Ethernet PHY Linux driver will return
+-1 value (SPEED_UNKNOWN macro) but the phosphor-networkd
+reports a uint32 data type to the Speed property. So, the
+Speed property will be 65535 (decimal number) Mbps.
+
+This commit catches the -1 value and sets the property to
+0 to indicate unknown.
+
+Fixes openbmc/phosphor-networkd#77
+
+Upstream-Status: Pending
+
+Change-Id: Ibc6bdcf2d8b49edda58f304654e355dcd1559bd0
+Signed-off-by: Chanh Nguyen <chanh@os.amperecomputing.com>
+---
+ src/system_queries.cpp | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/system_queries.cpp b/src/system_queries.cpp
+index 712fc08..cc5e281 100644
+--- a/src/system_queries.cpp
++++ b/src/system_queries.cpp
+@@ -85,11 +85,13 @@ EthInfo getEthInfo(stdplus::zstring_view ifname)
+ {
+     ethtool_cmd edata = {};
+     edata.cmd = ETHTOOL_GSET;
++    uint16_t speedUnknown = SPEED_UNKNOWN;
++
+     return optionalIFReq(
+                ifname, SIOCETHTOOL, "ETHTOOL"sv,
+                [&](const ifreq&) {
+                    return EthInfo{.autoneg = edata.autoneg != 0,
+-                                  .speed = edata.speed};
++                                  .speed = edata.speed == speedUnknown ? 0 : edata.speed};
+                },
+                &edata)
+         .value_or(EthInfo{});
+-- 
+2.43.0
+
