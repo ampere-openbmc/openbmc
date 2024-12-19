@@ -6,7 +6,7 @@
 function sel_trigger()
 {
 	echo "Error: system firmware hang, trigger sel"
-	ampere_add_redfishevent.sh OpenBMC.0.1.AmpereCritical.Critical "System firmware, Mpro hang"
+	ampere_add_redfishevent.sh OpenBMC.0.1.AmpereCritical "System firmware, Mpro hang"
 }
 
 # Do reset the system

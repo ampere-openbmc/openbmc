@@ -16,11 +16,11 @@ function check_cpu_presence()
 	s1_presence=$(busctl get-property "$inv_service" "$inv_obj_s1" \
 		"$inv_inf" "$inv_property" | cut -d' ' -f2)
 	if [ "$s0_presence" == "true" ] && [ "$s1_presence" == "true" ]; then
-		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent.OK "Host firmware boots with 2 Processor"
+		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent "Host firmware boots with 2 Processor"
 	elif [ "$s0_presence" == "true" ]; then
-		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent.OK "Host firmware boots with 1 Processor"
+		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent "Host firmware boots with 1 Processor"
 	else
-		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent.OK "No Processor is present"
+		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent "No Processor is present"
 	fi
 }
 
@@ -70,10 +70,10 @@ function check_power_state()
 	if [ "$state" == "0" ]
 	then
 		echo "Error: Failed to turn on ATX Power"
-		ampere_add_redfishevent.sh OpenBMC.0.1.PowerSupplyPowerGoodFailed.Critical "60000"
+		ampere_add_redfishevent.sh OpenBMC.0.1.PowerSupplyPowerGoodFailed "60000"
 		exit 0
 	else
-		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent.OK "ATX Power is ON"
+		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent "ATX Power is ON"
 	fi
 
 	echo "Soc power good checking"
@@ -81,10 +81,10 @@ function check_power_state()
 	if [ "$state" == "0" ]
 	then
 		echo "Error: Soc domain power failure"
-		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereCritical.Critical "Soc domain, power failure"
+		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereCritical "Soc domain, power failure"
 		exit 0
 	else
-		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent.OK "SoC power domain is ON"
+		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent "SoC power domain is ON"
 	fi
 
 	echo "PCP power good checking"
@@ -92,14 +92,14 @@ function check_power_state()
 	if [ "$state" == "0" ]
 	then
 		echo "Error: PCP domain power failure. Power off Host"
-		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereCritical.Critical "PCP domain, power failure"
+		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereCritical "PCP domain, power failure"
 		busctl set-property xyz.openbmc_project.State.Chassis \
 			/xyz/openbmc_project/state/chassis0 \
 			xyz.openbmc_project.State.Chassis RequestedPowerTransition s \
 			xyz.openbmc_project.State.Chassis.Transition.Off
 		exit 0
 	else
-		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent.OK "PCP power is ON"
+		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent "PCP power is ON"
 	fi
 }
 

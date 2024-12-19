@@ -10,11 +10,11 @@ function check_cpu_presence()
 	s0_presence=$(sx_present 0)
 	s1_presence=$(sx_present 1)
 	if [ "$s0_presence" == "0" ] && [ "$s1_presence" == "0" ]; then
-		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent.OK "Host firmware boots with 2 Processor"
+		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent "Host firmware boots with 2 Processor"
 	elif [ "$s0_presence" == "0" ]; then
-		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent.OK "Host firmware boots with 1 Processor"
+		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent "Host firmware boots with 1 Processor"
 	else
-		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent.OK "No Processor is present"
+		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent "No Processor is present"
 	fi
 }
 
@@ -64,10 +64,10 @@ function check_power_state()
 	if [ "$state" == "0" ]
 	then
 		echo "Error: Failed to turn on ATX Power"
-		ampere_add_redfishevent.sh OpenBMC.0.1.PowerSupplyPowerGoodFailed.Critical "60000"
+		ampere_add_redfishevent.sh OpenBMC.0.1.PowerSupplyPowerGoodFailed "60000"
 		exit 0
 	else
-		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent.OK "ATX Power is ON"
+		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent "ATX Power is ON"
 	fi
 
 	echo "Soc power good checking"
@@ -75,10 +75,10 @@ function check_power_state()
 	if [ "$state" == "0" ]
 	then
 		echo "Error: Soc domain power failure"
-		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereCritical.Critical "Soc domain, power failure"
+		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereCritical "Soc domain, power failure"
 		exit 0
 	else
-		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent.OK "SoC power domain is ON"
+		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent "SoC power domain is ON"
 	fi
 
 	echo "PCP power good checking"
@@ -86,10 +86,10 @@ function check_power_state()
 	if [ "$state" == "0" ]
 	then
 		echo "Error: PCP domain power failure"
-		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereCritical.Critical "PCP domain, power failure"
+		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereCritical "PCP domain, power failure"
 		exit 0
 	else
-		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent.OK "PCP power is ON"
+		ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent "PCP power is ON"
 	fi
 }
 
