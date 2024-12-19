@@ -24,9 +24,9 @@ FILES:${PN}-presence += " \
 
 do_install:append() {
     install -d ${D}${bindir}
-    install -m 0644 ${WORKDIR}/phosphor-multi-gpio-monitor.json ${D}${datadir}/${PN}/
-    install -m 0644 ${WORKDIR}/phosphor-multi-gpio-presence.json ${D}${datadir}/${PN}/
+    install -m 0644 ${UNPACKDIR}/phosphor-multi-gpio-monitor.json ${D}${datadir}/${PN}/
+    install -m 0644 ${UNPACKDIR}/phosphor-multi-gpio-presence.json ${D}${datadir}/${PN}/
 
     install -d ${D}${sbindir}
-    install -m 0755 ${WORKDIR}/ampere_sys_auth_failure.sh ${D}/${sbindir}/
+    install -m 0755 ${UNPACKDIR}/ampere_sys_auth_failure.sh ${D}/${sbindir}/
 }

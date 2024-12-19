@@ -11,9 +11,9 @@ FILES:${PN} += " \
                "
 
 do_install:append() {
-    install -m 0644 -D ${WORKDIR}/fru_id.json \
+    install -m 0644 -D ${UNPACKDIR}/fru_id.json \
         ${D}${datadir}/ipmi-providers/fru_id.json
-    install -m 0644 -D ${WORKDIR}/sensor_filter.json \
+    install -m 0644 -D ${UNPACKDIR}/sensor_filter.json \
         ${D}${datadir}/ipmi-providers/sensor_filter.json
     # The default dummy data provided for this file causes breakage in
     # Get SDR commands. Clearing out the provided entity-map entirely
