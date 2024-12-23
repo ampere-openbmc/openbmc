@@ -7,4 +7,5 @@ SRC_URI += "\
             file://0004-Set-ApplyTime-to-Immediate.patch \
             file://0005-Parsing-string-arguments-for-Account-policy-settings.patch \
             file://0006-Fix-the-error-preventing-user-edits.patch \
+            file://0007-Add-target-to-update-BIOS-host-firmware.patch \
            "
