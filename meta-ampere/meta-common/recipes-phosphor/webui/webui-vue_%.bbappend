@@ -10,4 +10,5 @@ SRC_URI += "\
             file://0007-Fix-date-time-format-regex-check.patch \
             file://0008-Bios-Option-Remove-oneTimeBootEnabled-check.patch \
             file://0009-Fix-the-error-preventing-user-edits.patch \
+            file://0010-Add-target-to-update-BIOS-host-firmware.patch \
            "

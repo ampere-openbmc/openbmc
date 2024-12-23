@@ -1,0 +1,37 @@
+From f62ce1fabb513f5f75ae1752d92ea9a4fcaa7af8 Mon Sep 17 00:00:00 2001
+From: Huy Le Anh <hule@amperecomputing.com>
+Date: Sun, 22 Dec 2024 14:43:56 +0700
+Subject: [PATCH 1/2] Add target to update BIOS host firmware
+
+The host firmware update failed, the main reason is that the target
+parameter was passed incorrectly. These commits add target parameter to
+ensure updating the BIOS host firmware successful.
+
+Tested:
+ 1. Log in to the BMC WebUI and navigate to Operations -> Firmware.
+ 2. Select the Host Firmware image file (.tar).
+ 3. Press start update and monitor using journalctl -f in the BMC console
+    -> The update is successful.
+
+Upstream-Status: Pending
+
+Signed-off-by: Huy Le Anh <hule@amperecomputing.com>
+---
+ src/views/Operations/Firmware/FirmwareFormUpdate.vue | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/views/Operations/Firmware/FirmwareFormUpdate.vue b/src/views/Operations/Firmware/FirmwareFormUpdate.vue
+index 4346747..ee7465d 100644
+--- a/src/views/Operations/Firmware/FirmwareFormUpdate.vue
++++ b/src/views/Operations/Firmware/FirmwareFormUpdate.vue
+@@ -112,6 +112,7 @@ export default {
+       this.$store
+         .dispatch('firmware/uploadFirmware', {
+           image: this.file,
++          targets: ['/redfish/v1/UpdateService/FirmwareInventory/bios_active'],
+         })
+         .catch(({ message }) => {
+           this.endLoader();
+-- 
+2.25.1
+
