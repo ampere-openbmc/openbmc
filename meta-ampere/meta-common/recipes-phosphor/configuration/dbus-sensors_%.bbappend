@@ -1,6 +1,6 @@
 FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
 
-PACKAGECONFIG:remove = " intelcpusensor ipmbsensor exitairtempsensor external mcutempsensor"
+PACKAGECONFIG:remove = " intelcpusensor ipmbsensor exitairtempsensor external mcutempsensor mctpreactor"
 PACKAGECONFIG:append = " nvmesensor"
 
 SRC_URI += " \
