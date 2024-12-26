@@ -20,7 +20,7 @@ do_install:append() {
     install -d ${D}/${datadir}/pldm
     install ${UNPACKDIR}/host_eid ${D}/${datadir}/pldm/
 
-    IBMPDR="${D}${datadir}/pldm/pdr"
+    IBMPDR="${D}${datadir}/pldm/pdr/com.ibm*"
     rm -rf $IBMPDR
     LINK="${D}${systemd_unitdir}/obmc-host-shutdown@0.target.wants/pldmSoftPowerOff.service"
     rm -f $LINK
