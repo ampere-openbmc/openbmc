@@ -1,0 +1,106 @@
+From 33e89ffe813eb0c8bf13a466ec35e938447d9c9f Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Tue, 31 Dec 2024 13:33:32 +0700
+Subject: [PATCH 2/2] button-handler: correct the object path of host/chassis
+
+Issue: When users press the Power/Reset buttons in the single host
+system then BMC does nothing. An "invalid_argument" exception is thrown.
+It makes the button-handler application fall to core-dump state.
+
+Root cause: after the commit [1], button-handler always access to the
+multiPwrBtnActConf variable to get the action in any case. It makes
+core-dump issue occur if this system did not configure multi-action for
+power button.
+Beside that, the Host's Number is calculated based on the prefix [2],
+but in the single host system, the object path of power button is [3].
+Therefore the Host's Number is null, it makes the Transition Request
+fail.
+
+Solution:
+- Check the system supports multi-action or not before access to the
+multiPwrBtnActConf.
+- Update the method to calculate Host's number.
+
+[1] https://github.com/openbmc/phosphor-buttons/commit/31ce375e7e71ff6b3da460dc63c1ab4f16cf4df6
+[2] /xyz/openbmc_project/Chassis/Buttons/Power0
+[3] /xyz/openbmc_project/Chassis/Buttons/Power0
+
+Upstream-Status: Pending
+
+Tested:
+  1. Turn off host then press Power Button
+  2. The Host is turned on.
+  3. Press Power Button more than 5s.
+  4. The Host is turned off.
+  5. Turn on the Host, then press Reset Button.
+  6. The Host is rebooted.
+
+Signed-off-by: Thang Tran <thuutran@amperecomputing.com>
+---
+ src/button_handler.cpp | 26 +++++++++++++++-----------
+ 1 file changed, 15 insertions(+), 11 deletions(-)
+
+diff --git a/src/button_handler.cpp b/src/button_handler.cpp
+index d2bd4d3..7b9c8e4 100644
+--- a/src/button_handler.cpp
++++ b/src/button_handler.cpp
+@@ -291,10 +291,10 @@ void Handler::handlePowerEvent(PowerEvent powerEventType,
+     std::string transitionName;
+     std::variant<Host::Transition, Chassis::Transition> transition;
+ 
+-    size_t hostNumber = 0;
+     std::string hostNumStr =
+-        objectPath.substr(std::string(POWER_DBUS_OBJECT_NAME).length());
++        objectPath.substr(std::string(POWER_DBUS_OBJECT_NAME).length() - 1);
+     auto isMultiHostSystem = isMultiHost();
++    size_t hostNumber = stoi(hostNumStr);
+ 
+     if (hostSelectButtonMode)
+     {
+@@ -302,8 +302,6 @@ void Handler::handlePowerEvent(PowerEvent powerEventType,
+         lg2::info("Multi-host system detected : {POSITION}", "POSITION",
+                   hostNumber);
+ 
+-        hostNumStr = std::to_string(hostNumber);
+-
+         // ignore  power and reset button events if BMC is selected.
+         if (isMultiHostSystem && (hostNumber == BMC_POSITION) &&
+             (powerEventType != PowerEvent::powerReleased) &&
+@@ -315,21 +313,27 @@ void Handler::handlePowerEvent(PowerEvent powerEventType,
+         }
+     }
+ 
++    hostNumStr = std::to_string(hostNumber);
++
+     switch (powerEventType)
+     {
+         case PowerEvent::powerReleased:
+         {
+-            for (const auto& iter : multiPwrBtnActConf[stoi(hostNumStr) - 1])
++            if (isButtonMultiActionSupport)
+             {
+-                if (duration > std::chrono::milliseconds(iter.first))
++                for (const auto& iter : multiPwrBtnActConf[stoi(hostNumStr)])
+                 {
+-                    dbusIfaceName = chassisIface;
+-                    transitionName = "RequestedPowerTransition";
+-                    objPathName = CHASSIS_STATE_OBJECT_NAME + hostNumStr;
+-                    transition = iter.second;
++                    if (duration > std::chrono::milliseconds(iter.first))
++                    {
++                        dbusIfaceName = chassisIface;
++                        transitionName = "RequestedPowerTransition";
++                        objPathName = CHASSIS_STATE_OBJECT_NAME + hostNumStr;
++                        transition = iter.second;
++                    }
+                 }
++
++                break;
+             }
+-            break;
+ 
+             if (duration <= LONG_PRESS_TIME_MS)
+             {
+-- 
+2.43.0
+
