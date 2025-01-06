@@ -1,0 +1,109 @@
+From 64f2f680c891e0325f877eb133546c74ce6993a1 Mon Sep 17 00:00:00 2001
+From: Chanh Nguyen <chanh@os.amperecomputing.com>
+Date: Fri, 3 Jan 2025 06:51:44 +0000
+Subject: [PATCH 2/2] ethernet_interface: Read the DHCPv6client from default
+ config file
+
+The systemd-network will use the DHCPv6client value to config DHCPv6
+client mode.
+  - false : Skip config DHCPv6 client.
+  - true : DHCPv6 client in stateful or stateless mode according to RA
+           flags.
+  - always : When IPv6AcceptRA.DHCPv6Client=always, start dhcp6 client
+             in solicit mode even if the router flags have neither M nor
+             O flags.
+
+Currently, the phosphor-network overwrites the DHCPv6client value to
+config file [2] based on the DHCPv6 enable/disable status, that makes
+the DHCPv6client value only "true" or "false", but it can't check
+"always".
+
+This patch to support the phosphor-network reads the DHCPv6client value
+from the default config file [1] while the DHCPv6 is enabled.
+
+Tested by:
+  Set DHCPEnabled D-bus property to "both" or "v6" to enable DHCPv6
+  Check the DHCPv6client value is in the default config file [1], If it's
+  "always" then the DHCPv6client value from config file [2] should be
+  "always".
+
+[1] /usr/lib/systemd/network/60-phosphor-networkd-default.network
+[2] /etc/systemd/network/00-bmc-ethX.network
+
+Upstream-Status: Pending
+
+Change-Id: I97d38d80c1a2c653e85b97337464810c9092fc48
+Signed-off-by: Chanh Nguyen <chanh@os.amperecomputing.com>
+---
+ meson.build                |  2 ++
+ src/ethernet_interface.cpp | 31 +++++++++++++++++++++++++++++--
+ 2 files changed, 31 insertions(+), 2 deletions(-)
+
+diff --git a/meson.build b/meson.build
+index 1ce272b..f052706 100644
+--- a/meson.build
++++ b/meson.build
+@@ -7,9 +7,11 @@ project(
+ )
+ 
+ default_busname = 'xyz.openbmc_project.Network'
++default_configfile = '60-phosphor-networkd-default.network'
+ 
+ conf_data = configuration_data()
+ conf_data.set_quoted('DEFAULT_BUSNAME', default_busname)
++conf_data.set_quoted('DEFAULT_CONFIGFILE', default_configfile)
+ conf_data.set('HAVE_UBOOT_ENV', get_option('uboot-env'))
+ conf_data.set(
+     'LINK_LOCAL_AUTOCONFIGURATION',
+diff --git a/src/ethernet_interface.cpp b/src/ethernet_interface.cpp
+index 8e76931..5117db5 100644
+--- a/src/ethernet_interface.cpp
++++ b/src/ethernet_interface.cpp
+@@ -49,6 +49,8 @@ constexpr auto TIMESYNCD_SERVICE = "org.freedesktop.timesync1";
+ constexpr auto TIMESYNCD_INTERFACE = "org.freedesktop.timesync1.Manager";
+ constexpr auto TIMESYNCD_SERVICE_PATH = "/org/freedesktop/timesync1";
+ 
++constexpr char DEFAULT_CONFIGFILE_PATH[] = "/usr/lib/systemd/network/";
++
+ constexpr auto METHOD_GET = "Get";
+ 
+ template <typename Func>
+@@ -834,8 +836,33 @@ void EthernetInterface::writeConfigurationFile()
+             }
+         }
+     }
+-    config.map["IPv6AcceptRA"].emplace_back()["DHCPv6Client"].emplace_back(
+-        dhcp6() ? "true" : "false");
++
++    if (dhcp6())
++    {
++        config::Parser default_config(std::string(DEFAULT_CONFIGFILE_PATH) +
++                                      std::string(DEFAULT_CONFIGFILE));
++        auto dhcpv6client = default_config.map.getLastValueString(
++            "IPv6AcceptRA", "DHCPv6Client");
++        if (dhcpv6client)
++        {
++            config.map["IPv6AcceptRA"]
++                .emplace_back()["DHCPv6Client"]
++                .emplace_back(*dhcpv6client == "always" ? "always" : "true");
++        }
++        else
++        {
++            config.map["IPv6AcceptRA"]
++                .emplace_back()["DHCPv6Client"]
++                .emplace_back("true");
++        }
++    }
++    else
++    {
++        config.map["IPv6AcceptRA"]
++            .emplace_back()["DHCPv6Client"]
++            .emplace_back("false");
++    }
++
+     {
+         auto& neighbors = config.map["Neighbor"];
+         for (const auto& sneighbor : staticNeighbors)
+-- 
+2.43.0
+
