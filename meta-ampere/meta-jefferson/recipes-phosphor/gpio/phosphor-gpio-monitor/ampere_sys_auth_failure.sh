@@ -1,10 +1,12 @@
 #!/bin/bash
 
 # shellcheck disable=SC2046
+# shellcheck source=meta-ampere/meta-jefferson/recipes-ampere/platform/ampere-platform-init/gpio-lib.sh
+source /usr/sbin/gpio-lib.sh
 
 Socket=$1
 
-if [ $(gpioget $(gpiofind host0-special-boot)) == 1 ]; then
+if [ $(gpio_name_get host0-special-boot) == 1 ]; then
     # Create SEL if Secprov failure in case of SPECIAL_BOOT mode
     touch /tmp/secprov
     /usr/sbin/ampere_add_redfishevent.sh OpenBMC.0.1.AmpereWarning "Authentication Failure detected: SECProv Failed"
