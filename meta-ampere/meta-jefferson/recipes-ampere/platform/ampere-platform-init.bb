@@ -18,12 +18,14 @@ RDEPENDS:${PN} += "bash"
 SRC_URI = " \
            file://ampere-platform-init.service \
            file://ampere_platform_init.sh \
+           file://gpio-lib.sh \
           "
 SYSTEMD_PACKAGES = "${PN}"
 SYSTEMD_SERVICE:${PN} = "ampere-platform-init.service"
 
 do_install () {
     install -d ${D}${sbindir}
+    install -m 0755 ${UNPACKDIR}/gpio-lib.sh ${D}${sbindir}/
     install -m 0755 ${UNPACKDIR}/ampere_platform_init.sh ${D}${sbindir}/
     install -d ${D}${systemd_unitdir}/system/
     install -m 0644 ${UNPACKDIR}/ampere-platform-init.service ${D}${systemd_unitdir}/system
