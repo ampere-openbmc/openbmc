@@ -31,6 +31,13 @@
         "Continue": true
     },
     {
+        "Name": "S0_SYS_AUTH_FAILURE_L",
+        "LineName": "s0-sys-auth-failure-n",
+        "EventMon": "FALLING",
+        "Target": "ampere_sys_auth_failure@0.service",
+        "Continue": true
+    },
+    {
         "Name": "NMI_BUTTON",
         "LineName": "nmi-button",
         "EventMon": "FALLING",
