@@ -1,0 +1,74 @@
+{
+    "DIMM_P0_A0": {
+        "Channel": 0,
+        "MemoryController":0,
+        "Slot":0,
+        "Socket":0
+    },
+    "DIMM_P0_B0": {
+        "Channel": 0,
+        "MemoryController":1,
+        "Slot":0,
+        "Socket":0
+    },
+    "DIMM_P0_C0": {
+        "Channel": 0,
+        "MemoryController":2,
+        "Slot":0,
+        "Socket":0
+    },
+    "DIMM_P0_D0": {
+        "Channel": 0,
+        "MemoryController":3,
+        "Slot":0,
+        "Socket":0
+    },
+    "DIMM_P0_E0": {
+        "Channel": 0,
+        "MemoryController":4,
+        "Slot":0,
+        "Socket":0
+    },
+    "DIMM_P0_F0": {
+        "Channel": 0,
+        "MemoryController":5,
+        "Slot":0,
+        "Socket":0
+    },
+    "DIMM_P0_G0": {
+        "Channel": 0,
+        "MemoryController":6,
+        "Slot":0,
+        "Socket":0
+    },
+    "DIMM_P0_H0": {
+        "Channel": 0,
+        "MemoryController":7,
+        "Slot":0,
+        "Socket":0
+    },
+    "DIMM_P0_I0": {
+        "Channel": 0,
+        "MemoryController":8,
+        "Slot":0,
+        "Socket":0
+    },
+    "DIMM_P0_J0": {
+        "Channel": 0,
+        "MemoryController":9,
+        "Slot":0,
+        "Socket":0
+    },
+    "DIMM_P0_K0": {
+        "Channel": 0,
+        "MemoryController":10,
+        "Slot":0,
+        "Socket":0
+    },
+    "DIMM_P0_L0": {
+        "Channel": 0,
+        "MemoryController":11,
+        "Slot":0,
+        "Socket":0
+    }
+}

@@ -1,0 +1,194 @@
+{
+    "Socket 0 DIMM 0": {
+        "Channel":0,
+        "MemoryController":0,
+        "Slot":0,
+        "Socket":0
+    },
+    "Socket 0 DIMM 1": {
+        "Channel":0,
+        "MemoryController":0,
+        "Slot":1,
+        "Socket":0
+    },
+    "Socket 0 DIMM 2": {
+        "Channel":0,
+        "MemoryController":1,
+        "Slot":0,
+        "Socket":0
+    },
+    "Socket 0 DIMM 3": {
+        "Channel":0,
+        "MemoryController":1,
+        "Slot":1,
+        "Socket":0
+    },
+    "Socket 0 DIMM 4": {
+        "Channel":0,
+        "MemoryController":2,
+        "Slot":0,
+        "Socket":0
+    },
+    "Socket 0 DIMM 5": {
+        "Channel":0,
+        "MemoryController":2,
+        "Slot":1,
+        "Socket":0
+    },
+    "Socket 0 DIMM 6": {
+        "Channel":0,
+        "MemoryController":3,
+        "Slot":0,
+        "Socket":0
+    },
+    "Socket 0 DIMM 7": {
+        "Channel":0,
+        "MemoryController":3,
+        "Slot":1,
+        "Socket":0
+    },
+    "Socket 0 DIMM 8": {
+        "Channel":0,
+        "MemoryController":4,
+        "Slot":0,
+        "Socket":0
+    },
+    "Socket 0 DIMM 9": {
+        "Channel":0,
+        "MemoryController":4,
+        "Slot":1,
+        "Socket":0
+    },
+    "Socket 0 DIMM 10": {
+        "Channel":0,
+        "MemoryController":5,
+        "Slot":0,
+        "Socket":0
+    },
+    "Socket 0 DIMM 11": {
+        "Channel":0,
+        "MemoryController":5,
+        "Slot":1,
+        "Socket":0
+    },
+    "Socket 0 DIMM 12": {
+        "Channel":0,
+        "MemoryController":6,
+        "Slot":0,
+        "Socket":0
+    },
+    "Socket 0 DIMM 13": {
+        "Channel":0,
+        "MemoryController":6,
+        "Slot":1,
+        "Socket":0
+    },
+    "Socket 0 DIMM 14": {
+        "Channel":0,
+        "MemoryController":7,
+        "Slot":0,
+        "Socket":0
+    },
+    "Socket 0 DIMM 15": {
+        "Channel":0,
+        "MemoryController":7,
+        "Slot":1,
+        "Socket":0
+    },
+    "Socket 1 DIMM 0": {
+        "Channel":0,
+        "MemoryController":0,
+        "Slot":0,
+        "Socket":1
+    },
+    "Socket 1 DIMM 1": {
+        "Channel":0,
+        "MemoryController":0,
+        "Slot":1,
+        "Socket":1
+    },
+    "Socket 1 DIMM 2": {
+        "Channel":0,
+        "MemoryController":1,
+        "Slot":0,
+        "Socket":1
+    },
+    "Socket 1 DIMM 3": {
+        "Channel":0,
+        "MemoryController":1,
+        "Slot":1,
+        "Socket":1
+    },
+    "Socket 1 DIMM 4": {
+        "Channel":0,
+        "MemoryController":2,
+        "Slot":0,
+        "Socket":1
+    },
+    "Socket 1 DIMM 5": {
+        "Channel":0,
+        "MemoryController":2,
+        "Slot":1,
+        "Socket":1
+    },
+    "Socket 1 DIMM 6": {
+        "Channel":0,
+        "MemoryController":3,
+        "Slot":0,
+        "Socket":1
+    },
+    "Socket 1 DIMM 7": {
+        "Channel":0,
+        "MemoryController":3,
+        "Slot":1,
+        "Socket":1
+    },
+    "Socket 1 DIMM 8": {
+        "Channel":0,
+        "MemoryController":4,
+        "Slot":0,
+        "Socket":1
+    },
+    "Socket 1 DIMM 9": {
+        "Channel":0,
+        "MemoryController":4,
+        "Slot":1,
+        "Socket":1
+    },
+    "Socket 1 DIMM 10": {
+        "Channel":0,
+        "MemoryController":5,
+        "Slot":0,
+        "Socket":1
+    },
+    "Socket 1 DIMM 11": {
+        "Channel":0,
+        "MemoryController":5,
+        "Slot":1,
+        "Socket":1
+    },
+    "Socket 1 DIMM 12": {
+        "Channel":0,
+        "MemoryController":6,
+        "Slot":0,
+        "Socket":1
+    },
+    "Socket 1 DIMM 13": {
+        "Channel":0,
+        "MemoryController":6,
+        "Slot":1,
+        "Socket":1
+    },
+    "Socket 1 DIMM 14": {
+        "Channel":0,
+        "MemoryController":7,
+        "Slot":0,
+        "Socket":1
+    },
+    "Socket 1 DIMM 15": {
+        "Channel":0,
+        "MemoryController":7,
+        "Slot":1,
+        "Socket":1
+    }
+}
