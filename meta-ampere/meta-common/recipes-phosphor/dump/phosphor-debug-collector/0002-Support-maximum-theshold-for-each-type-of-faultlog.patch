@@ -1,4 +1,4 @@
-From a891fdc26aa921b58a29711d011dd6672fc5d312 Mon Sep 17 00:00:00 2001
+From 72628698b5106f6baa0bad819cee9939fe0a1620 Mon Sep 17 00:00:00 2001
 From: Dung Cao <dung@os.amperecomputing.com>
 Date: Tue, 20 Aug 2024 16:37:21 +0700
 Subject: [PATCH 2/5] Support maximum theshold for each type of faultlog
@@ -16,15 +16,15 @@ Upstream-Status: Pending
 
 Signed-off-by: Dung Cao <dung@os.amperecomputing.com>
 ---
- dump_manager_faultlog.cpp | 177 +++++++++++++++++++++++++++++++++++---
- dump_manager_faultlog.hpp |  27 +++++-
+ dump_manager_faultlog.cpp | 136 ++++++++++++++++++++++++++++++++++----
+ dump_manager_faultlog.hpp |  27 +++++++-
  faultlog_dump_entry.hpp   |   4 +-
- meson.build               |   9 ++
- meson.options             |  17 +++-
- 5 files changed, 216 insertions(+), 18 deletions(-)
+ meson.build               |   9 +++
+ meson.options             |  17 ++++-
+ 5 files changed, 175 insertions(+), 18 deletions(-)
 
 diff --git a/dump_manager_faultlog.cpp b/dump_manager_faultlog.cpp
-index 20151e7..662552f 100644
+index 20151e7..ba3a5b8 100644
 --- a/dump_manager_faultlog.cpp
 +++ b/dump_manager_faultlog.cpp
 @@ -58,18 +58,11 @@ sdbusplus::message::object_path
@@ -82,7 +82,7 @@ index 20151e7..662552f 100644
  {
      using InvalidArgument =
          sdbusplus::xyz::openbmc_project::Common::Error::InvalidArgument;
-@@ -487,6 +487,157 @@ void Manager::saveEarliestEntry()
+@@ -487,6 +487,116 @@ void Manager::saveEarliestEntry()
      entries.erase(earliestEntryId);
  }
 
@@ -131,24 +131,9 @@ index 20151e7..662552f 100644
 +    for ( auto it = entries.begin(); it != entries.end(); ++it  )
 +    {
 +        auto secondPtr = it->second.get();
-+        FaultDataType entryType =
-+                dynamic_cast<faultlog::Entry*>(secondPtr)->type();
-+        std::string primaryLogId =
++        std::string faultLogFilePath =
 +                dynamic_cast<faultlog::Entry*>(secondPtr)->primaryLogId();
 +        // Remove fault log file
-+        std::string faultLogFilePath;
-+        switch (entryType) {
-+        case FaultDataType::CPER:
-+            faultLogFilePath = std::string(CPER_LOG_PATH) + primaryLogId;
-+            break;
-+        case FaultDataType::Crashdump:
-+            faultLogFilePath = std::string(CRASHDUMP_LOG_PATH) + primaryLogId;
-+            break;
-+        default:
-+            lg2::error("Incorrect FaultLog Entry Type");
-+            elog<InternalFailure>();
-+            break;
-+        }
 +        if (std::filesystem::exists(faultLogFilePath.c_str()))
 +        {
 +            std::filesystem::remove(faultLogFilePath.c_str());
@@ -163,24 +148,11 @@ index 20151e7..662552f 100644
 +        auto secondPtr = it->second.get();
 +        FaultDataType entryType =
 +                dynamic_cast<faultlog::Entry*>(secondPtr)->type();
-+        std::string primaryLogId =
++        std::string faultLogFilePath =
 +                dynamic_cast<faultlog::Entry*>(secondPtr)->primaryLogId();
 +        if (entryType == type)
 +        {
 +            // Remove fault log file
-+            std::string faultLogFilePath;
-+            switch (entryType) {
-+            case FaultDataType::CPER:
-+                faultLogFilePath = std::string(CPER_LOG_PATH) + primaryLogId;
-+                break;
-+            case FaultDataType::Crashdump:
-+                faultLogFilePath = std::string(CRASHDUMP_LOG_PATH) + primaryLogId;
-+                break;
-+            default:
-+                lg2::error("Incorrect FaultLog Entry Type");
-+                elog<InternalFailure>();
-+                break;
-+            }
 +            if (std::filesystem::exists(faultLogFilePath.c_str()))
 +            {
 +                std::filesystem::remove(faultLogFilePath.c_str());
@@ -196,21 +168,8 @@ index 20151e7..662552f 100644
 +    auto secondPtr = it->second.get();
 +    FaultDataType entryType =
 +            dynamic_cast<faultlog::Entry*>(secondPtr)->type();
-+    std::string primaryLogId =
++    std::string faultLogFilePath =
 +            dynamic_cast<faultlog::Entry*>(secondPtr)->primaryLogId();
-+    std::string faultLogFilePath;
-+    switch (entryType) {
-+    case FaultDataType::CPER:
-+        faultLogFilePath = std::string(CPER_LOG_PATH) + primaryLogId;
-+        break;
-+    case FaultDataType::Crashdump:
-+        faultLogFilePath = std::string(CRASHDUMP_LOG_PATH) + primaryLogId;
-+        break;
-+    default:
-+        lg2::error("Incorrect FaultLog Entry Type");
-+        elog<InternalFailure>();
-+        break;
-+    }
 +
 +    if (std::filesystem::exists(faultLogFilePath.c_str()))
 +    {
@@ -241,7 +200,7 @@ index 20151e7..662552f 100644
  } // namespace dump
  } // namespace phosphor
 diff --git a/dump_manager_faultlog.hpp b/dump_manager_faultlog.hpp
-index a5d5d23..7ca14b0 100644
+index e29c16b..e415cd6 100644
 --- a/dump_manager_faultlog.hpp
 +++ b/dump_manager_faultlog.hpp
 @@ -62,6 +62,9 @@ class Manager :
@@ -310,10 +269,10 @@ index a5d5d23..7ca14b0 100644
 
  } // namespace faultlog
 diff --git a/faultlog_dump_entry.hpp b/faultlog_dump_entry.hpp
-index ca39410..e492241 100644
+index 5988c64..8fa0bad 100644
 --- a/faultlog_dump_entry.hpp
 +++ b/faultlog_dump_entry.hpp
-@@ -63,7 +63,8 @@ class Entry : virtual public EntryIfaces, virtual public phosphor::dump::Entry
+@@ -62,7 +62,8 @@ class Entry : virtual public EntryIfaces, virtual public phosphor::dump::Entry
          const std::filesystem::path& file,
          phosphor::dump::OperationStatus status, std::string originatorId,
          originatorTypes originatorType, FaultDataType entryType,
@@ -323,7 +282,7 @@ index ca39410..e492241 100644
          std::map<uint32_t, std::unique_ptr<phosphor::dump::Entry>>* parentMap) :
          EntryIfaces(bus, objPath.c_str(), EntryIfaces::action::defer_emit),
          phosphor::dump::Entry(bus, objPath.c_str(), dumpId, timeStamp, fileSize,
-@@ -73,6 +74,7 @@ class Entry : virtual public EntryIfaces, virtual public phosphor::dump::Entry
+@@ -72,6 +73,7 @@ class Entry : virtual public EntryIfaces, virtual public phosphor::dump::Entry
      {
          type(entryType);
          primaryLogId(primaryLogIdStr);
@@ -358,7 +317,7 @@ index ee48f40..6c0ec7c 100644
                        description : 'Maximum number of specially saved crashdump entries'
                      )
 diff --git a/meson.options b/meson.options
-index 09c94ae..fd5ec05 100644
+index 09c94ae..a02cefc 100644
 --- a/meson.options
 +++ b/meson.options
 @@ -103,7 +103,12 @@ option('FAULTLOG_DUMP_OBJ_ENTRY', type : 'string',

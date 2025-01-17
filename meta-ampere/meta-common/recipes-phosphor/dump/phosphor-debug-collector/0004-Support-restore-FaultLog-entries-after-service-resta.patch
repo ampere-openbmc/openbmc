@@ -1,4 +1,4 @@
-From bd94ed765279acb32113e9b9b8eca0850d5ad277 Mon Sep 17 00:00:00 2001
+From 8e21846d44b9cc69e22a2f9dc7663761348a5cc6 Mon Sep 17 00:00:00 2001
 From: Dung Cao <dung@os.amperecomputing.com>
 Date: Tue, 20 Aug 2024 16:38:36 +0700
 Subject: [PATCH 4/5] Support restore FaultLog entries after service restart
@@ -13,13 +13,13 @@ Upstream-Status: Pending
 Signed-off-by: Dung Cao <dung@os.amperecomputing.com>
 ---
  dump_entry.hpp            |   9 ++
- dump_manager_faultlog.cpp | 203 +++++++++++++++++++++++++++++++-------
- dump_manager_faultlog.hpp |  16 +--
- efaultlog_serialize.cpp   | 105 ++++++++++++++++++++
- efaultlog_serialize.hpp   |  37 +++++++
+ dump_manager_faultlog.cpp | 183 ++++++++++++++++++++++++++++++--------
+ dump_manager_faultlog.hpp |  11 ++-
+ efaultlog_serialize.cpp   | 105 ++++++++++++++++++++++
+ efaultlog_serialize.hpp   |  37 ++++++++
  faultlog_dump_entry.hpp   |   8 ++
  meson.build               |   3 +-
- 7 files changed, 339 insertions(+), 42 deletions(-)
+ 7 files changed, 314 insertions(+), 42 deletions(-)
  create mode 100644 efaultlog_serialize.cpp
  create mode 100644 efaultlog_serialize.hpp
 
@@ -44,7 +44,7 @@ index b30489b..9ee67de 100644
      /** @brief This entry's parent */
      Manager& parent;
 diff --git a/dump_manager_faultlog.cpp b/dump_manager_faultlog.cpp
-index 9a68703..a67c0f5 100644
+index d2a8d22..7c5f81f 100644
 --- a/dump_manager_faultlog.cpp
 +++ b/dump_manager_faultlog.cpp
 @@ -4,6 +4,7 @@
@@ -55,7 +55,7 @@ index 9a68703..a67c0f5 100644
 
  #include <phosphor-logging/elog-errors.hpp>
  #include <phosphor-logging/elog.hpp>
-@@ -87,46 +88,25 @@ sdbusplus::message::object_path
+@@ -87,46 +88,24 @@ sdbusplus::message::object_path
          "next entry id: {ID}, entries.size(): {SIZE}",
          "ID", id, "SIZE", entries.size());
 
@@ -69,28 +69,27 @@ index 9a68703..a67c0f5 100644
 -                      std::ofstream::out | std::fstream::trunc);
 -
 -    if (faultLogFile.is_open())
--    {
++    std::filesystem::path faultLogFilePath = primaryLogIdStr;
++    uint64_t fileSize = 0;
++    if (std::filesystem::exists(faultLogFilePath))
+     {
 -        lg2::info("faultLogFile is open");
 -
 -        faultLogFile << "This is faultlog file #" << idString << " at "
 -                     << std::string(FAULTLOG_DUMP_PATH) + idString << std::endl;
 -
 -        faultLogFile.close();
--    }
++        fileSize = std::filesystem::file_size(faultLogFilePath);
+     }
 -    else
-+    std::filesystem::path faultLogFilePath;
-+    uint64_t fileSize = 0;
-+    getFaultLogPath(entryType, primaryLogIdStr, faultLogFilePath);
-+    if (std::filesystem::exists(faultLogFilePath))
-     {
+-    {
 -        lg2::error(
 -            "Failed to open fault log file at {FILE_PATH}, errno: {ERRNO}, "
 -            "strerror: {STRERROR}, OBJECTPATH: {OBJECT_PATH}, ID: {ID}",
 -            "FILE_PATH", faultLogFilePath, "ERRNO", errno, "STRERROR",
 -            strerror(errno), "OBJECT_PATH", objPath, "ID", id);
 -        elog<Open>(ErrnoOpen(errno), PathOpen(objPath.c_str()));
-+        fileSize = std::filesystem::file_size(faultLogFilePath);
-     }
+-    }
 -
 +    lg2::info("file_size: {SIZE}", "SIZE", fileSize);
      try
@@ -116,7 +115,7 @@ index 9a68703..a67c0f5 100644
      }
      catch (const std::invalid_argument& e)
      {
-@@ -155,6 +135,15 @@ void Manager::deleteAll()
+@@ -155,6 +134,15 @@ void Manager::deleteAll()
 
      removeAllDataEntry();
 
@@ -132,7 +131,7 @@ index 9a68703..a67c0f5 100644
      phosphor::dump::Manager::deleteAll();
 
      auto iter = savedCperLogEntries.begin();
-@@ -672,9 +661,153 @@ void Manager::removeEarliestEntry(std::string &additionalTypeStr)
+@@ -631,9 +619,134 @@ void Manager::removeEarliestEntry(std::string &additionalTypeStr)
          }
      }
 
@@ -146,24 +145,6 @@ index 9a68703..a67c0f5 100644
      entries.erase(it);
  }
 
-+void Manager::getFaultLogPath(FaultDataType entryType,
-+                              std::string primaryLogIdStr,
-+                              std::filesystem::path &faultLogFilePath)
-+{
-+    switch (entryType) {
-+    case FaultDataType::CPER:
-+        faultLogFilePath = std::string(CPER_LOG_PATH) + primaryLogIdStr;
-+        break;
-+    case FaultDataType::Crashdump:
-+        faultLogFilePath = std::string(CRASHDUMP_LOG_PATH) + primaryLogIdStr;
-+        break;
-+    default:
-+        lg2::error("Incorrect FaultLog Entry Type");
-+        elog<InternalFailure>();
-+        break;
-+    }
-+}
-+
 +void Manager::restore()
 +{
 +    lg2::info("dump_manager_faultlog restore is called");
@@ -196,8 +177,7 @@ index 9a68703..a67c0f5 100644
 +            std::filesystem::path faultLogFilePath;
 +            uint64_t fileSize = 0;
 +            entryType = e->type();
-+            primaryLogIdStr = e->primaryLogId();
-+            getFaultLogPath(entryType, primaryLogIdStr,faultLogFilePath);
++            faultLogFilePath = e->primaryLogId();
 +            if (std::filesystem::exists(faultLogFilePath))
 +            {
 +                fileSize = std::filesystem::file_size(faultLogFilePath);
@@ -287,7 +267,7 @@ index 9a68703..a67c0f5 100644
  } // namespace dump
  } // namespace phosphor
 diff --git a/dump_manager_faultlog.hpp b/dump_manager_faultlog.hpp
-index 649ae6a..d8e9ed7 100644
+index f03801d..6136e0d 100644
 --- a/dump_manager_faultlog.hpp
 +++ b/dump_manager_faultlog.hpp
 @@ -9,6 +9,7 @@
@@ -312,15 +292,10 @@ index 649ae6a..d8e9ed7 100644
 
      /** @brief  Delete all fault log entries and their corresponding fault log
       * dump files */
-@@ -166,6 +162,14 @@ class Manager :
+@@ -166,6 +162,9 @@ class Manager :
      /** @brief Check threshold condition of FaultLog */
      void checkThresholdFaultLog(FaultDataType type,
                                  std::string &additionalTypeStr);
-+
-+    /** @brief Get the path of FaultLog Entry Data */
-+    void getFaultLogPath(FaultDataType entryType,
-+                         std::string primaryLogIdStr,
-+                         std::filesystem::path &faultLogFilePath);
 +
 +    /** @brief Restore the counter of last entry, cper and crashdump */
 +    void restoreCounter();
@@ -482,10 +457,10 @@ index 0000000..11ce6af
 +} // namespace dump
 +} // namespace phosphor
 diff --git a/faultlog_dump_entry.hpp b/faultlog_dump_entry.hpp
-index e492241..679e588 100644
+index 8fa0bad..125e83d 100644
 --- a/faultlog_dump_entry.hpp
 +++ b/faultlog_dump_entry.hpp
-@@ -81,6 +81,14 @@ class Entry : virtual public EntryIfaces, virtual public phosphor::dump::Entry
+@@ -80,6 +80,14 @@ class Entry : virtual public EntryIfaces, virtual public phosphor::dump::Entry
       */
      void delete_() override;
 
