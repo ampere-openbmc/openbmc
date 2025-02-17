@@ -54,6 +54,11 @@ case ${EXTENDED_VERSION} in
 		CMD="/usr/sbin/ampere_firmware_upgrade.sh eeprom $IMAGE 2"
 		;;
 
+	"soc_fru")
+		IMAGE=$(find "${IMG_PATH}" -type f \( -name "*.img" -o -name "*.slim" -o -name "*.rom" -o -name "*.bin" \))
+		CMD="/usr/sbin/ampere_firmware_upgrade.sh socfru $IMAGE"
+		;;
+
 	"fru" | "mbfru")
 		IMAGE=$(find "${IMG_PATH}" -type f \( -name "*.bin" \))
 		CMD="/usr/sbin/ampere_firmware_upgrade.sh fru $IMAGE 1"
