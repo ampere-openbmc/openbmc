@@ -1,0 +1,63 @@
+From a1ea8f8c37e5a6ac87861727b76515c66e8d118e Mon Sep 17 00:00:00 2001
+From: Khang D Nguyen <khangng@os.amperecomputing.com>
+Date: Fri, 7 Mar 2025 13:22:37 +0700
+Subject: [PATCH] Add extern declaration for getNewRecordId
+
+Configure with -Dsend-to-logger=false will make compilation
+fail on gcc-13, due to usage of undeclared getNewRecordId in
+include/sel_logger.hpp.
+(Because the usage is inside a templated function, the behavior is
+undefined. This GCC version makes it an error by default.)
+
+This forward-declares getNewRecordId.
+
+Tested: Compilation success in openbmc build and standalone build.
+
+Upstream-Status: Pending
+
+Change-Id: Id00000009b0911179a3a133d5c7e27661df17b86
+Signed-off-by: Khang D Nguyen <khangng@os.amperecomputing.com>
+---
+ include/sel_logger.hpp | 3 +++
+ src/sel_logger.cpp     | 4 ++--
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/include/sel_logger.hpp b/include/sel_logger.hpp
+index 0be63fc..d7e35d2 100644
+--- a/include/sel_logger.hpp
++++ b/include/sel_logger.hpp
+@@ -41,6 +41,9 @@ static const std::filesystem::path selLogDir = "/var/log";
+ static const std::string selLogFilename = "ipmi_sel";
+ #ifdef SEL_LOGGER_ENABLE_SEL_DELETE
+ static const std::string nextRecordFilename = "next_records";
++extern uint16_t getNewRecordId();
++#else
++extern unsigned int getNewRecordId();
+ #endif
+ 
+ void toHexStr(const std::vector<uint8_t>& data, std::string& hexStr);
+diff --git a/src/sel_logger.cpp b/src/sel_logger.cpp
+index 5e7e02a..b1aa52a 100644
+--- a/src/sel_logger.cpp
++++ b/src/sel_logger.cpp
+@@ -114,7 +114,7 @@ static void backupCacheToFile()
+     }
+ }
+ 
+-static uint16_t getNewRecordId()
++uint16_t getNewRecordId()
+ {
+     uint16_t nextRecordId = nextRecordsCache.back();
+     // Check if SEL is full
+@@ -304,7 +304,7 @@ static unsigned int initializeRecordId()
+ 
+ static unsigned int recordId = initializeRecordId();
+ 
+-static unsigned int getNewRecordId()
++unsigned int getNewRecordId()
+ {
+     if (++recordId >= selInvalidRecID)
+     {
+-- 
+2.43.0
+
