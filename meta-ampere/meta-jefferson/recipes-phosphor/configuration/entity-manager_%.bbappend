@@ -4,6 +4,11 @@ SRC_URI += " \
            "
 
 do_install:append() {
+    find ${D}${datadir}/${PN}/configurations -maxdepth 1 -type f ! -name "mtjefferson*" -delete
+    rm -rf ${D}${datadir}/${PN}/configurations/meta
+    rm -rf ${D}${datadir}/${PN}/configurations/tyan
+
     install -d ${D}${datadir}/${PN}
     install -m 0444 ${UNPACKDIR}/blacklist.json ${D}${datadir}/${PN}
+    install -d ${D}${datadir}/${PN}/configurations
 }
