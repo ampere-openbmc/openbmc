@@ -1,0 +1,44 @@
+From e6f3a46483f1ace7aa88d434fbe4221dc098e1dc Mon Sep 17 00:00:00 2001
+From: Chau Ly <chaul@amperecomputing.com>
+Date: Tue, 18 Mar 2025 09:18:28 +0000
+Subject: [PATCH 2/2] configurations: mtjefferson: update
+ Stepwise_PCIeNIC_MaxTemp
+
+This commit updates the old fan control configuration of
+Stepwise_PcieCard_MaxTemp to Stepwise_PCIeNIC_MaxTemp and uses
+PCIeNIC_MaxTemp sensor name for the Inputs configuration.
+
+Tested: Latest CI build passed
+
+Upstream-Status: Pending
+
+Signed-off-by: Chau Ly <chaul@amperecomputing.com>
+---
+ configurations/mtjefferson_mb.json | 8 +++-----
+ 1 file changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/configurations/mtjefferson_mb.json b/configurations/mtjefferson_mb.json
+index 367c7a7..ce66652 100644
+--- a/configurations/mtjefferson_mb.json
++++ b/configurations/mtjefferson_mb.json
+@@ -1797,14 +1797,12 @@
+             {
+                 "Class": "temp",
+                 "Inputs": [
+-                    "PcieZoneTemp1",
+-                    "PcieZoneTemp2"
++                    "PCIeNIC_MaxTemp"
+                 ],
+                 "MissingIsAcceptable": [
+-                    "PcieZoneTemp1",
+-                    "PcieZoneTemp2"
++                    "PCIeNIC_MaxTemp"
+                 ],
+-                "Name": "Stepwise_PcieCard_MaxTemp",
++                "Name": "Stepwise_PCIeNIC_MaxTemp",
+                 "NegativeHysteresis": 2.0,
+                 "Output": [
+                     15.0,
+-- 
+2.34.1
+

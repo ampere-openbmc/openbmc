@@ -1,0 +1,117 @@
+From 5025ff5dc34b50f02f7e15d5c079f01e0ef587bc Mon Sep 17 00:00:00 2001
+From: Chanh Nguyen <chanh@os.amperecomputing.com>
+Date: Tue, 18 Mar 2025 09:15:45 +0000
+Subject: [PATCH 1/2] configurations: mtjefferson: add PCIe NIC temperature
+
+This commit adds PCIe NIC temperature configurations to
+mtjefferson_mb.json.
+
+Tested: Latest CI build passed
+
+Upstream-Status: Pending
+
+Signed-off-by: Chanh Nguyen <chanh@os.amperecomputing.com>
+---
+ configurations/mtjefferson_mb.json | 79 ++++++++++++++++++++++++++++++
+ 1 file changed, 79 insertions(+)
+
+diff --git a/configurations/mtjefferson_mb.json b/configurations/mtjefferson_mb.json
+index 1ac89d7..367c7a7 100644
+--- a/configurations/mtjefferson_mb.json
++++ b/configurations/mtjefferson_mb.json
+@@ -1285,6 +1285,44 @@
+                 "Type": "Maximum",
+                 "Units": "DegreesC"
+             },
++            {
++                "EntityId": 11,
++                "EntityInstance": 6,
++                "MaxValue": 127,
++                "MinValue": 0,
++                "Name": "PCIeNIC_MaxTemp",
++                "Sensors": [
++                    "PCIeNIC1_Temp"
++                ],
++                "Thresholds": [
++                    {
++                        "Direction": "greater than",
++                        "Name": "upper critical",
++                        "Severity": 1,
++                        "Value": 115.269
++                    },
++                    {
++                        "Direction": "greater than",
++                        "Name": "upper non critical",
++                        "Severity": 0,
++                        "Value": 105.289
++                    },
++                    {
++                        "Direction": "less than",
++                        "Name": "lower critical",
++                        "Severity": 1,
++                        "Value": 0.0
++                    },
++                    {
++                        "Direction": "less than",
++                        "Name": "lower non critical",
++                        "Severity": 0,
++                        "Value": 5.489
++                    }
++                ],
++                "Type": "Maximum",
++                "Units": "DegreesC"
++            },
+             {
+                 "EntityId": 11,
+                 "EntityInstance": 3,
+@@ -1857,6 +1895,47 @@
+                 "Type": "Sum",
+                 "Units": "Watts"
+             },
++            {
++                "Address": "0x1f",
++                "Bus": 40,
++                "EntityId": 11,
++                "EntityInstance": 4,
++                "MaxValue": 127,
++                "MinValue": 0,
++                "Name": "PCIeNIC1_Lcl",
++                "Name1": "PCIeNIC1_Temp",
++                "Thresholds": [
++                    {
++                        "Direction": "greater than",
++                        "Index": 2,
++                        "Name": "upper critical",
++                        "Severity": 1,
++                        "Value": 115.269
++                    },
++                    {
++                        "Direction": "greater than",
++                        "Index": 2,
++                        "Name": "upper non critical",
++                        "Severity": 0,
++                        "Value": 105.289
++                    },
++                    {
++                        "Direction": "less than",
++                        "Index": 2,
++                        "Name": "lower critical",
++                        "Severity": 1,
++                        "Value": 0.0
++                    },
++                    {
++                        "Direction": "less than",
++                        "Index": 2,
++                        "Name": "lower non critical",
++                        "Severity": 0,
++                        "Value": 5.489
++                    }
++                ],
++                "Type": "TMP421"
++            },
+             {
+                 "Address": "0x1f",
+                 "Bus": 30,
+-- 
+2.34.1
+
