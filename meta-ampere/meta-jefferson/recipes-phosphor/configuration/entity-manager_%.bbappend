@@ -1,6 +1,8 @@
 FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
 SRC_URI += " \
             file://blacklist.json \
+            file://0001-configurations-mtjefferson-add-PCIe-NIC-temperature.patch \
+            file://0002-configurations-mtjefferson-update-Stepwise_PCIeNIC_M.patch \
            "
 
 do_install:append() {
