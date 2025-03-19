@@ -1,0 +1,28 @@
+From b8f5e5f71455c22b97542e54937e348ad1afd4e8 Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Wed, 19 Mar 2025 02:59:57 +0000
+Subject: [PATCH 4/6] configurations: remove redundant Backplane Version
+
+On Jefferson, Backplane FRU does not have Product Version/Board Extra.
+This removes redundant Version configuration.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ configurations/mtjefferson_bp.json | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/configurations/mtjefferson_bp.json b/configurations/mtjefferson_bp.json
+index 5ae4c4c..15343b0 100644
+--- a/configurations/mtjefferson_bp.json
++++ b/configurations/mtjefferson_bp.json
+@@ -77,8 +77,5 @@
+     "xyz.openbmc_project.Inventory.Decorator.Replaceable": {
+         "FieldReplaceable": false,
+         "HotPluggable": false
+-    },
+-    "xyz.openbmc_project.Inventory.Decorator.Revision": {
+-        "Version": "$BOARD_INFO_AM1"
+     }
+ }

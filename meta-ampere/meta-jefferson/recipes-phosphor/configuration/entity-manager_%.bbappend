@@ -1,6 +1,7 @@
 FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
 SRC_URI += " \
             file://blacklist.json \
+            file://0004-configurations-remove-redundant-Backplane-Version.patch \
            "
 
 do_install:append() {
