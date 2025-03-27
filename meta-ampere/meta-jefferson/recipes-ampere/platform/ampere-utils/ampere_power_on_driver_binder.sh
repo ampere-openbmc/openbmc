@@ -22,6 +22,11 @@ do
 		echo "Driver ${DRIVER_NAMEs[$i]} is already bound."
 	else
 		echo "${DRIVER_NAMEs[$i]}" > "$bindFile"
+		retVal=$?
+		if [ $retVal -ne 0 ]; then
+			# Exit error code when the binding failed
+			exit 1
+		fi
 	fi
 done
 
