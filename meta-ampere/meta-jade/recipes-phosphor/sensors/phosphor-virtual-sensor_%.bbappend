@@ -1,6 +1,7 @@
 FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
 
 SRC_URI:append = " \
+                   file://0001-handle-NaN-value-assignment-only-for-specific-interface-removal.patch \
                    file://virtual_sensor_config.json \
                   "
 

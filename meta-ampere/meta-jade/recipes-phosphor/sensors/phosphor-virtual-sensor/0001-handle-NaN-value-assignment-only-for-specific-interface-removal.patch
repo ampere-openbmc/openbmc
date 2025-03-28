@@ -1,0 +1,62 @@
+From 3027be6762ddac54d614853ca3245b495b108585 Mon Sep 17 00:00:00 2001
+From: Huy Anh Le <hule@amperecomputing.com>
+Date: Tue, 18 Mar 2025 02:53:13 +0000
+Subject: [PATCH] handle NaN value assignment only for specific interface
+ removal
+
+When handling the signal removed event, the sensor value is always
+set to NaN regardless of which interface is removed. This causes an
+issue in cases where an unrelated interface
+(e.g., xyz.openbmc_project.Association.Definitions) is removed,
+while the sensor object and the Sensor.Value interface remain intact,
+with the value still being 0. As a result, no PropertiesChanged signal
+is triggered, leaving the value stuck at NaN indefinitely.
+This commit ensures that NaN is only set when the
+`xyz.openbmc_project.Sensor.Value` interface is specifically removed,
+preventing unintended behavior and maintaining value consistency.
+
+Upstream-Status: Pending
+
+Signed-off-by: Huy Anh Le <hule@amperecomputing.com>
+---
+ dbusSensor.cpp | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/dbusSensor.cpp b/dbusSensor.cpp
+index 527a848..44cab8c 100644
+--- a/dbusSensor.cpp
++++ b/dbusSensor.cpp
+@@ -4,6 +4,7 @@
+ 
+ #include <sdbusplus/bus.hpp>
+ #include <sdbusplus/bus/match.hpp>
++#include <unordered_set>
+ 
+ #include <cmath>
+ static constexpr auto sensorIntf =
+@@ -133,9 +134,13 @@ void DbusSensor::handleDbusSignalRemove(sdbusplus::message_t& msg)
+ {
+     try
+     {
+-        auto objPath = msg.unpack<sdbusplus::message::object_path>();
++        auto [objPath, msgData] =
++            msg.unpack<sdbusplus::message::object_path,
++                       std::vector<std::string>>();
+ 
+-        if (this->path == objPath)
++        std::unordered_set<std::string> interfaces(msgData.begin(), msgData.end());
++
++        if (this->path == objPath && interfaces.contains(sensorIntf))
+         {
+             value = std::numeric_limits<double>::quiet_NaN();
+             virtualSensor.updateVirtualSensor();
+@@ -148,4 +153,4 @@ void DbusSensor::handleDbusSignalRemove(sdbusplus::message_t& msg)
+     }
+ }
+ 
+-} // namespace phosphor::virtual_sensor
++} // namespace phosphor::virtual_sensor
+\ No newline at end of file
+-- 
+2.43.0
+
