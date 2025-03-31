@@ -3,6 +3,7 @@ SRC_URI += " \
             file://blacklist.json \
             file://0001-configurations-mtjefferson-add-PCIe-NIC-temperature.patch \
             file://0002-configurations-mtjefferson-update-Stepwise_PCIeNIC_M.patch \
+            file://0003-update-PowerState-for-S0_EXT_VREF.patch \
            "
 
 do_install:append() {

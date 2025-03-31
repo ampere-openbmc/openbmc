@@ -1,0 +1,32 @@
+From 40df77daab44472dc40225659198bd98f8323cee Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Mon, 31 Mar 2025 09:35:48 +0000
+Subject: [PATCH] configurations: mtjefferson: update PowerState for
+ S0_EXT_VREF
+
+The S0_EXT_VREF should be read after host0-ready gpio is asserted.
+This updates PowerState to "On".
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ configurations/mtjefferson_mb.json | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/configurations/mtjefferson_mb.json b/configurations/mtjefferson_mb.json
+index 8a94dd1..6672c4e 100644
+--- a/configurations/mtjefferson_mb.json
++++ b/configurations/mtjefferson_mb.json
+@@ -1085,7 +1085,7 @@
+                 "MinValue": 0,
+                 "Name": "S0_EXT_VREF",
+                 "PollRate": 15,
+-                "PowerState": "ChassisOn",
++                "PowerState": "On",
+                 "ScaleFactor": 1,
+                 "Thresholds": [
+                     {
+-- 
+2.43.0
+
