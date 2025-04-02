@@ -1,0 +1,53 @@
+From 65dd8ee608f0ebc97a9113f6a30b1434bbebbfda Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Wed, 2 Apr 2025 11:04:07 +0700
+Subject: [PATCH 10/10] dbus-sdr: correct sensor type code of Power sensors
+
+Issue: When users request to get the sensor properties via "ipmitool
+sensor get <sensor_name>" command, the "Sensor Type" of Power sensors
+are "Other".
+
+Root cause: In the dynamic-sensor mode, the "Sensor Type" of a sensor is
+indicated via the object path. Currently, the if the object path
+includes "/power/" inside, the "Sensor Type" is "Other".
+
+Solution: Update the table to map "power" to "Power Supply" type.
+
+Tested:
+   1. Get the power sensor via ipmitool commands
+      ipmitool sensor get <power_sensor_name>
+   2. The Sensor Type is "Power Supply"
+
+Upstream-Status: Pending
+
+Signed-off-by: Thang Tran <thuutran@amperecomputing.com>
+---
+ dbus-sdr/sdrutils.cpp         | 2 +-
+ include/dbus-sdr/sdrutils.hpp | 1 +
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/dbus-sdr/sdrutils.cpp b/dbus-sdr/sdrutils.cpp
+index af1388d..276aa8a 100644
+--- a/dbus-sdr/sdrutils.cpp
++++ b/dbus-sdr/sdrutils.cpp
+@@ -55,7 +55,7 @@ boost::container::flat_map<
+                                       SensorEventTypeCodes::sensorSpecified)},
+          {"processor", std::make_pair(SensorTypeCodes::processor,
+                                       SensorEventTypeCodes::sensorSpecified)},
+-         {"power", std::make_pair(SensorTypeCodes::other,
++         {"power", std::make_pair(SensorTypeCodes::power_supply,
+                                   SensorEventTypeCodes::threshold)},
+          {"memory", std::make_pair(SensorTypeCodes::memory,
+                                    SensorEventTypeCodes::sensorSpecified)},
+diff --git a/include/dbus-sdr/sdrutils.hpp b/include/dbus-sdr/sdrutils.hpp
+index b52351d..569042c 100644
+--- a/include/dbus-sdr/sdrutils.hpp
++++ b/include/dbus-sdr/sdrutils.hpp
+@@ -310,6 +310,7 @@ enum class SensorTypeCodes : uint8_t
+     fan = 0x04,
+     physical_security = 0x5,
+     processor = 0x07,
++    power_supply = 0x08,
+     power_unit = 0x09,
+     other = 0x0b,
+     memory = 0x0c,
