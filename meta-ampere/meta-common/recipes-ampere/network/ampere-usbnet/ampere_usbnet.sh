@@ -16,6 +16,11 @@ SUBMAC=$(echo "$MAC_ADDR" | cut -d ":" -f 2-5)
 echo 0x0103 > /sys/kernel/config/usb_gadget/usbnet/idProduct
 echo "OpenBMC usbnet Device" > /sys/kernel/config/usb_gadget/usbnet/strings/0x409/product
 
+# Reconfigure the device with new properties
+udc="$(cat /sys/kernel/config/usb_gadget/usbnet/UDC)"
+echo "" > /sys/kernel/config/usb_gadget/usbnet/UDC
+echo "$udc" > /sys/kernel/config/usb_gadget/usbnet/UDC
+
 if [ "$MAC_ADDR" != "$ENV_MAC_ADDR" ]; then
 	# fail and wait for systemd to restart this service
 	exit 1
