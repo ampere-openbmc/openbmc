@@ -1,0 +1,37 @@
+From 54f5dfe4e90d8997dc8e4709ed8cb611e3a8ce6c Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Tue, 29 Apr 2025 11:03:35 +0000
+Subject: [PATCH 4/4] topology: attach powering association to downstream
+
+Issue:
+When an upstream component (e.g., a Motherboard) changes but the
+downstream component (e.g., a PowerSupply) remains unchanged, the
+topology update may fail to refresh associations because the
+downstream is not reprocessed.
+
+Solution:
+Modified the code to attach the powering association to the downstream
+entity in result[downstream] with the ("powering", "powered_by", upstream).
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ src/entity_manager/topology.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/entity_manager/topology.cpp b/src/entity_manager/topology.cpp
+index fa95a85..90d8c8d 100644
+--- a/src/entity_manager/topology.cpp
++++ b/src/entity_manager/topology.cpp
+@@ -72,8 +72,8 @@ std::unordered_map<std::string, std::vector<Association>> Topology::getAssocs(
+                                                         "containing", upstream);
+                         if (powerPaths.contains(downstream))
+                         {
+-                            result[upstream].emplace_back(
+-                                "powered_by", "powering", downstream);
++                            result[downstream].emplace_back(
++                                "powering", "powered_by", upstream);
+                         }
+                     }
+                 }
