@@ -1,9 +1,12 @@
-From 5ffd7a88a15e0fb1efed56b2cf407ea6c995d35f Mon Sep 17 00:00:00 2001
+From 06984f828966dacc97709d1441b5e2e03f16fa67 Mon Sep 17 00:00:00 2001
 From: Dung Cao <dung@os.amperecomputing.com>
 Date: Tue, 20 Aug 2024 16:38:36 +0700
-Subject: [PATCH 4/5] Support restore FaultLog entries after service restart
+Subject: [PATCH 1/2] Support restore FaultLog entries after service restart
 
-Use Cereal to save and restore the FaultLog Dbus object.
+Implemented serialization of faultlog entry attributes using the
+nlohmann::json library. Serializing attributes including type,
+primaryLogId, and additionalTypeName.
+
 Serialize and persist the FaultLog Dbus object when creating a new
 entry. De-serialize and restore them (if persistent ones exist) when
 the phosphor-debug-collector starts up.
@@ -12,50 +15,38 @@ Upstream-Status: Pending
 
 Signed-off-by: Dung Cao <dung@os.amperecomputing.com>
 ---
- dump_entry.hpp            |   9 ++
- dump_manager_faultlog.cpp | 183 ++++++++++++++++++++++++++++++--------
- dump_manager_faultlog.hpp |  11 ++-
- efaultlog_serialize.cpp   | 105 ++++++++++++++++++++++
- efaultlog_serialize.hpp   |  37 ++++++++
- faultlog_dump_entry.hpp   |   8 ++
- meson.build               |   1 +
- 7 files changed, 313 insertions(+), 41 deletions(-)
- create mode 100644 efaultlog_serialize.cpp
- create mode 100644 efaultlog_serialize.hpp
+ dump_entry.cpp            |   2 +
+ dump_manager_faultlog.cpp | 171 ++++++++++++++++++++++++++++++--------
+ dump_manager_faultlog.hpp |  12 +--
+ faultlog_dump_entry.cpp   | 121 +++++++++++++++++++++++++++
+ faultlog_dump_entry.hpp   |  25 ++++++
+ 5 files changed, 292 insertions(+), 39 deletions(-)
 
-diff --git a/dump_entry.hpp b/dump_entry.hpp
-index b30489b..9ee67de 100644
---- a/dump_entry.hpp
-+++ b/dump_entry.hpp
-@@ -152,6 +152,15 @@ class Entry : public EntryIfaces
-      */
-     virtual void deserialize(const std::filesystem::path& dumpPath);
+diff --git a/dump_entry.cpp b/dump_entry.cpp
+index b7fa3a0..027c1db 100644
+--- a/dump_entry.cpp
++++ b/dump_entry.cpp
+@@ -91,6 +91,7 @@ void Entry::serialize()
+         j["originatorId"] = originatorId();
+         j["originatorType"] = originatorType();
+         j["startTime"] = startTime();
++        j["elapsed"] = elapsed();
  
-+    /** @brief Update Entry Properties
-+     *  @return
-+     */
-+    void updateEntry(uint64_t dumpSize, std::filesystem::path& filePath)
-+    {
-+        size(dumpSize);
-+        file = filePath;
-+    }
-+
-   protected:
-     /** @brief This entry's parent */
-     Manager& parent;
+         os << j.dump();
+     }
+@@ -143,6 +144,7 @@ void Entry::deserialize(const std::filesystem::path& dumpPath)
+                 originatorId(j["originatorId"].get<std::string>());
+                 originatorType(j["originatorType"].get<originatorTypes>());
+                 startTime(j["startTime"].get<uint64_t>());
++                elapsed(j["elapsed"].get<uint64_t>());
+             }
+             else
+             {
 diff --git a/dump_manager_faultlog.cpp b/dump_manager_faultlog.cpp
-index 7d03c8b..d98e8b4 100644
+index 7d03c8b..e29bb84 100644
 --- a/dump_manager_faultlog.cpp
 +++ b/dump_manager_faultlog.cpp
-@@ -4,6 +4,7 @@
- 
- #include "dump_utils.hpp"
- #include "faultlog_dump_entry.hpp"
-+#include "efaultlog_serialize.hpp"
- 
- #include <phosphor-logging/elog-errors.hpp>
- #include <phosphor-logging/elog.hpp>
-@@ -87,46 +88,24 @@ sdbusplus::message::object_path Manager::createDump(
+@@ -87,46 +87,30 @@ sdbusplus::message::object_path Manager::createDump(
          "next entry id: {ID}, entries.size(): {SIZE}",
          "ID", id, "SIZE", entries.size());
  
@@ -82,16 +73,20 @@ index 7d03c8b..d98e8b4 100644
 +        fileSize = std::filesystem::file_size(faultLogFilePath);
      }
 -    else
--    {
++    lg2::info("file_size: {SIZE}", "SIZE", fileSize);
++    std::filesystem::path filePath = dumpDir + idString;
++    if (!std::filesystem::exists(filePath))
+     {
 -        lg2::error(
 -            "Failed to open fault log file at {FILE_PATH}, errno: {ERRNO}, "
 -            "strerror: {STRERROR}, OBJECTPATH: {OBJECT_PATH}, ID: {ID}",
 -            "FILE_PATH", faultLogFilePath, "ERRNO", errno, "STRERROR",
 -            strerror(errno), "OBJECT_PATH", objPath, "ID", id);
 -        elog<Open>(ErrnoOpen(errno), PathOpen(objPath.c_str()));
--    }
++        std::filesystem::create_directory(filePath);
+     }
 -
-+    lg2::info("file_size: {SIZE}", "SIZE", fileSize);
++    filePath /= FAULTLOG_FILE;
      try
      {
          lg2::info("dump_manager_faultlog.cpp: add faultlog entry");
@@ -106,16 +101,16 @@ index 7d03c8b..d98e8b4 100644
 -                primaryLogIdStr, additionalTypeStr, *this, &entries)));
 +        auto e = std::make_unique<faultlog::Entry>(
 +                      bus, objPath.c_str(), id, generateTimestamp(),
-+                      fileSize, faultLogFilePath,
++                      fileSize, filePath,
 +                      phosphor::dump::OperationStatus::Completed,
 +                      originatorId, originatorType, entryType,
 +                      primaryLogIdStr, additionalTypeStr, *this, &entries);
-+        phosphor::dump::faultlog::serialize(*e, id);
++        e->serializeEntry();
 +        entries.insert(std::make_pair(id, std::move(e)));
      }
      catch (const std::invalid_argument& e)
      {
-@@ -155,6 +134,15 @@ void Manager::deleteAll()
+@@ -155,6 +139,15 @@ void Manager::deleteAll()
  
      removeAllDataEntry();
  
@@ -125,13 +120,13 @@ index 7d03c8b..d98e8b4 100644
 +        fs::path faultlogPath(FAULTLOG_DUMP_PATH);
 +        uint32_t id = it->first;
 +        faultlogPath /= std::to_string(id);
-+        fs::remove(faultlogPath);
++        fs::remove_all(faultlogPath);
 +    }
 +
      phosphor::dump::Manager::deleteAll();
  
      auto iter = savedCperLogEntries.begin();
-@@ -631,9 +619,134 @@ void Manager::removeEarliestEntry(std::string &additionalTypeStr)
+@@ -631,9 +624,121 @@ void Manager::removeEarliestEntry(std::string &additionalTypeStr)
          }
      }
  
@@ -139,7 +134,7 @@ index 7d03c8b..d98e8b4 100644
 +    fs::path faultlogPath(FAULTLOG_DUMP_PATH);
 +    uint32_t id = it->first;
 +    faultlogPath /= std::to_string(id);
-+    fs::remove(faultlogPath);
++    fs::remove_all(faultlogPath);
 +
 +    /* Delete the FaultLog entry */
      entries.erase(it);
@@ -160,37 +155,24 @@ index 7d03c8b..d98e8b4 100644
 +        auto idNum = std::stol(id);
 +        auto idString = std::to_string(idNum);
 +        auto objPath = std::filesystem::path(baseEntryPath) / idString;
++        std::filesystem::path filePath = file.path();
 +        FaultDataType entryType;
 +        std::string primaryLogIdStr;
 +        std::string additionalTypeStr;
 +        std::string originatorId;
 +        originatorTypes originatorType;
++
++        filePath /= FAULTLOG_FILE;
 +        auto e = std::make_unique<faultlog::Entry>(
 +                      bus, objPath.c_str(), idNum, generateTimestamp(),
-+                      std::filesystem::file_size(file.path()), file.path(),
++                      0, filePath,
 +                      phosphor::dump::OperationStatus::Completed,
 +                      originatorId, originatorType, entryType,
 +                      primaryLogIdStr, additionalTypeStr, *this, &entries);
 +
-+        if (phosphor::dump::faultlog::deserialize(*e, idNum))
-+        {
-+            std::filesystem::path faultLogFilePath;
-+            uint64_t fileSize = 0;
-+            entryType = e->type();
-+            faultLogFilePath = e->primaryLogId();
-+            if (std::filesystem::exists(faultLogFilePath))
-+            {
-+                fileSize = std::filesystem::file_size(faultLogFilePath);
-+            }
-+            e->updateEntry(fileSize, faultLogFilePath);
-+             entries.insert(std::make_pair(idNum, std::move(e)));
-+        }
-+        else
-+        {
-+            lg2::error("Failed to restore error entry. "
-+                       "entry id: {ID}", "ID", idNum);
-+        }
-+
++        e->deserializeEntry();
++        e->serializeEntry();
++        entries.insert(std::make_pair(idNum, std::move(e)));
 +    }
 +
 +    if (!entries.empty())
@@ -267,7 +249,7 @@ index 7d03c8b..d98e8b4 100644
  } // namespace dump
  } // namespace phosphor
 diff --git a/dump_manager_faultlog.hpp b/dump_manager_faultlog.hpp
-index 94cb87d..4d284cf 100644
+index 94cb87d..e04afdd 100644
 --- a/dump_manager_faultlog.hpp
 +++ b/dump_manager_faultlog.hpp
 @@ -11,6 +11,7 @@
@@ -278,7 +260,15 @@ index 94cb87d..4d284cf 100644
  #include <xyz/openbmc_project/Dump/Create/server.hpp>
  
  namespace phosphor
-@@ -71,12 +72,7 @@ class Manager :
+@@ -22,6 +23,7 @@ namespace faultlog
+ 
+ using CreateIface = sdbusplus::server::object_t<
+     sdbusplus::xyz::openbmc_project::Dump::server::Create>;
++namespace fs = std::filesystem;
+ 
+ /** @class Manager
+  *  @brief FaultLog Dump manager implementation.
+@@ -71,12 +73,7 @@ class Manager :
          diagnosticSize = 0;
      }
  
@@ -292,7 +282,7 @@ index 94cb87d..4d284cf 100644
  
      /** @brief  Delete all fault log entries and their corresponding fault log
       * dump files */
-@@ -168,6 +164,9 @@ class Manager :
+@@ -168,6 +165,9 @@ class Manager :
      /** @brief Check threshold condition of FaultLog */
      void checkThresholdFaultLog(FaultDataType type,
                                  std::string &additionalTypeStr);
@@ -302,191 +292,192 @@ index 94cb87d..4d284cf 100644
  };
  
  } // namespace faultlog
-diff --git a/efaultlog_serialize.cpp b/efaultlog_serialize.cpp
-new file mode 100644
-index 0000000..4a09458
---- /dev/null
-+++ b/efaultlog_serialize.cpp
-@@ -0,0 +1,105 @@
-+#include "config.h"
-+
-+#include "efaultlog_serialize.hpp"
-+#include <xyz/openbmc_project/Dump/Entry/FaultLog/server.hpp>
-+#include <xyz/openbmc_project/Common/FaultLogType/server.hpp>
-+#include <cereal/access.hpp>
-+#include <cereal/cereal.hpp>
-+#include <phosphor-logging/lg2.hpp>
-+#include <sdbusplus/bus.hpp>
-+
-+#include <cereal/archives/binary.hpp>
-+#include <cereal/types/string.hpp>
-+#include <cereal/types/tuple.hpp>
-+#include <cereal/types/vector.hpp>
-+#include <phosphor-logging/log.hpp>
-+#include <fmt/format.h>
-+#include <fstream>
-+
-+CEREAL_CLASS_VERSION(phosphor::dump::faultlog::Entry, CLASS_VERSION);
-+
-+namespace phosphor
+diff --git a/faultlog_dump_entry.cpp b/faultlog_dump_entry.cpp
+index 9ff1eb3..31f4cbe 100644
+--- a/faultlog_dump_entry.cpp
++++ b/faultlog_dump_entry.cpp
+@@ -1,6 +1,7 @@
+ #include "faultlog_dump_entry.hpp"
+ 
+ #include <phosphor-logging/lg2.hpp>
++#include <nlohmann/json.hpp>
+ 
+ namespace phosphor
+ {
+@@ -28,6 +29,126 @@ void Entry::delete_()
+     parentMap->erase(id);
+ }
+ 
++void Entry::serializeFaultLogEntry()
 +{
-+namespace dump
-+{
-+namespace faultlog
-+{
++    // Folder for serialized entry
++    std::filesystem::path dir = file.parent_path() / PRESERVE;
 +
-+using namespace phosphor::logging;
-+
-+/** @brief Function required by Cereal to perform serialization.
-+ *  @tparam Archive - Cereal archive type (binary in our case).
-+ *  @param[in] a       - reference to Cereal archive.
-+ *  @param[in] e       - const reference to error entry.
-+ */
-+template <class Archive>
-+void save(Archive& a, const faultlog::Entry& e)
-+{
-+    a(convertForMessage(e.type()), e.primaryLogId(), e.additionalTypeName());
-+}
-+
-+/** @brief Function required by Cereal to perform deserialization.
-+ *  @tparam Archive - Cereal archive type (binary in our case).
-+ *  @param[in] a       - reference to Cereal archive.
-+ *  @param[in] e       - reference to error entry.
-+ */
-+template <class Archive>
-+void load(Archive& a, faultlog::Entry& e)
-+{
-+
-+    using FaultDataType = sdbusplus::xyz::openbmc_project::Common::server::
-+                          FaultLogType::FaultLogTypes;
-+    FaultDataType type;
-+    std::string typeStr;
-+    std::string primaryLogId;
-+    std::string additionalTypeName;
-+
-+    a(typeStr, primaryLogId, additionalTypeName);
-+    type = sdbusplus::xyz::openbmc_project::Common::server::
-+           FaultLogType::convertFaultLogTypesFromString(typeStr);
-+
-+    e.type(type, true);
-+    e.primaryLogId(primaryLogId, true);
-+    e.additionalTypeName(additionalTypeName, true);
-+}
-+
-+fs::path serialize(const faultlog::Entry& e, uint32_t id)
-+{
-+    fs::path faultlogPath(FAULTLOG_DUMP_PATH);
-+    faultlogPath /= std::to_string(id);
-+    std::ofstream os(faultlogPath.c_str(), std::ios::binary);
-+    cereal::BinaryOutputArchive oarchive(os);
-+    oarchive(e);
-+
-+    return faultlogPath;
-+}
-+
-+bool deserialize(faultlog::Entry& e, uint32_t id)
-+{
-+    fs::path faultlogPath(FAULTLOG_DUMP_PATH);
-+    faultlogPath /= std::to_string(id);
-+    if (!fs::exists(faultlogPath))
-+    {
-+        return false;
-+    }
-+
++    // Serialized entry file
++    std::filesystem::path serializePath = dir / FAULTLOG_SERIALIZE_FILE;
 +    try
 +    {
-+        std::ifstream is(faultlogPath.c_str(), std::ios::in | std::ios::binary);
-+        cereal::BinaryInputArchive iarchive(is);
-+        iarchive(e);
-+        return true;
++        if (!std::filesystem::exists(dir))
++        {
++            std::filesystem::create_directories(dir);
++        }
++
++        std::ofstream os(serializePath, std::ios::binary);
++        if (!os.is_open())
++        {
++            lg2::error("Failed to open file for serialization: {PATH} ", "PATH",
++                       serializePath);
++            return;
++        }
++        nlohmann::json j;
++        j["dumpId"] = id;
++        j["type"] = type();
++        j["primaryLogId"] = primaryLogId();
++        j["additionalTypeName"] = additionalTypeName();
++
++        os << j.dump();
 +    }
-+    catch (const cereal::Exception& ex)
++    catch (const std::exception& e)
 +    {
-+        log<level::ERR>(fmt::format("Error in deserialize, "
-+                                    "errormsg({})", ex.what())
-+                                    .c_str());
-+        fs::remove(faultlogPath);
-+        return false;
++        lg2::error("Serialization error: {PATH} {ERROR} ", "PATH",
++                   serializePath, "ERROR", e);
++
++        // Remove the serialization folder if that got created
++        // Ignore the error since folder may not be created
++        std::error_code ec;
++        std::filesystem::remove_all(dir, ec);
 +    }
 +}
 +
-+} // namespace faultlog
-+} // namespace dump
-+} // namespace phosphor
-diff --git a/efaultlog_serialize.hpp b/efaultlog_serialize.hpp
-new file mode 100644
-index 0000000..11ce6af
---- /dev/null
-+++ b/efaultlog_serialize.hpp
-@@ -0,0 +1,37 @@
-+#pragma once
-+
-+#include "config.h"
-+
-+#include "faultlog_dump_entry.hpp"
-+
-+#include <filesystem>
-+#include <string>
-+#include <vector>
-+
-+namespace phosphor
++void Entry::serializeEntry()
 +{
-+namespace dump
++    // Serialize faultlog entry
++    serializeFaultLogEntry();
++    // Serialize base dump entry
++    serialize();
++}
++
++void Entry::derializeFaultLogEntry()
 +{
-+namespace faultlog
++    try
++    {
++        // .preserve folder
++        std::filesystem::path dir = file.parent_path() / PRESERVE;
++        if (!std::filesystem::exists(dir))
++        {
++            lg2::info("Serialization directory: {SERIAL_DIR} doesnt exist, "
++                      "skip deserialization",
++                      "SERIAL_DIR", dir);
++            return;
++        }
++
++        // Serialized entry
++        std::filesystem::path serializePath = dir / FAULTLOG_SERIALIZE_FILE;
++        std::ifstream is(serializePath, std::ios::binary);
++        if (!is.is_open())
++        {
++            lg2::error("Failed to open file for deserialization: {PATH}",
++                       "PATH", serializePath);
++            return;
++        }
++        nlohmann::json j;
++        is >> j;
++
++        uint32_t storedId;
++        j.at("dumpId").get_to(storedId);
++        if (storedId == id)
++        {
++            type(j["type"].get<FaultDataType>());
++            primaryLogId(j["primaryLogId"].get<std::string>());
++            additionalTypeName(j["additionalTypeName"].get<std::string>());
++            uint64_t fileSize = 0;
++            std::filesystem::path faultLogFilePath;
++            faultLogFilePath = primaryLogId();
++            if (std::filesystem::exists(faultLogFilePath))
++            {
++                fileSize = std::filesystem::file_size(faultLogFilePath);
++            }
++            size(fileSize);
++        }
++        else
++        {
++            lg2::error("The id ({ID_IN_FILE}) is not matching the dump id "
++                       "({DUMPID}); skipping deserialization.",
++                       "ID_IN_FILE", storedId, "DUMPID", id);
++
++            // Id is not matching, this could be due to file corruption
++            // deleting the .preserve folder.
++            // Attempt to delete the folder and ignore any error.
++            std::error_code ec;
++            std::filesystem::remove_all(dir, ec);
++        }
++    }
++    catch (const std::exception& e)
++    {
++        lg2::error("Deserialization error: {PATH}, {ERROR}", "PATH",
++                   file.parent_path(), "ERROR", e);
++    }
++}
++
++void Entry::deserializeEntry()
 +{
++    // Deserialize faultlog entry
++    derializeFaultLogEntry();
++    // Deserialize base dump entry
++    deserialize(file.parent_path());
++}
 +
-+namespace fs = std::filesystem;
 +
-+/** @brief Serialize and persist error d-bus object
-+ *  @param[in] a - const reference to error entry
-+ *  @param[in] id - entry id
-+ *  @return fs::path - pathname of persisted error file
-+ */
-+fs::path serialize(const faultlog::Entry& e, uint32_t id);
-+
-+/** @brief Deserialze a persisted error into a d-bus object
-+ *  @param[in] id - entry id
-+ *  @param[in] e - reference to error object which is the target of
-+ *             deserialization.
-+ *  @return bool - true if the deserialization was successful, false otherwise.
-+ */
-+bool deserialize(faultlog::Entry& e, uint32_t id);
-+
-+} // namespace faultlog
-+} // namespace dump
-+} // namespace phosphor
+ } // namespace faultlog
+ } // namespace dump
+ } // namespace phosphor
 diff --git a/faultlog_dump_entry.hpp b/faultlog_dump_entry.hpp
-index 8fa0bad..125e83d 100644
+index 8fa0bad..c462b3a 100644
 --- a/faultlog_dump_entry.hpp
 +++ b/faultlog_dump_entry.hpp
-@@ -80,6 +80,14 @@ class Entry : virtual public EntryIfaces, virtual public phosphor::dump::Entry
+@@ -27,6 +27,11 @@ using EntryIfaces = sdbusplus::server::object_t<
+ using FaultDataType = sdbusplus::xyz::openbmc_project::Common::server::
+     FaultLogType::FaultLogTypes;
+ 
++// Dummy file store the contents
++constexpr auto FAULTLOG_FILE = "dummy_file";
++
++// Serialize file store the contents of faultlog entry
++constexpr auto FAULTLOG_SERIALIZE_FILE = "faultlog_serialized_entry.json";
+ 
+ /** @class Entry
+  *  @brief OpenBMC Fault Log Dump Entry implementation.
+@@ -80,10 +85,30 @@ class Entry : virtual public EntryIfaces, virtual public phosphor::dump::Entry
       */
      void delete_() override;
  
-+    /** @brief Update Entry Properties
++    /** @brief Serialize the faultlog and base dump entry attributes
 +     *  @return
 +     */
-+    void updateEntry(uint64_t dumpSize, std::filesystem::path& filePath)
-+    {
-+        phosphor::dump::Entry::updateEntry(dumpSize, filePath);
-+    }
++    void serializeEntry();
++
++    /** @brief Deserialize the faultlog and base dump entry attributes
++     *  @return
++     */
++    void deserializeEntry();
 +
    private:
      /** @brief Fault log map containing this entry (e.g. the main fault log map
       * or a saved entries map) */
-diff --git a/meson.build b/meson.build
-index cd14907..9a762c4 100644
---- a/meson.build
-+++ b/meson.build
-@@ -339,6 +339,7 @@ phosphor_dump_manager_sources = [
-     'dump_offload.cpp',
-     'dump_manager_faultlog.cpp',
-     'faultlog_dump_entry.cpp',
-+    'efaultlog_serialize.cpp',
- ]
+     std::map<uint32_t, std::unique_ptr<phosphor::dump::Entry>>* parentMap;
++
++    /** @brief Serialize the faultlog entry attributes
++     *  @return
++     */
++    void serializeFaultLogEntry();
++
++    /** @brief Deserialize the faultlog entry attributes
++     *  @return
++     */
++    void derializeFaultLogEntry();
+ };
  
- phosphor_dump_manager_dependency = [
+ } // namespace faultlog
 -- 
 2.34.1
 
