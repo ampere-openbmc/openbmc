@@ -1,4 +1,4 @@
-From 2bd9c3d5e57bfec25e14b5d1d2caf22d6bb8f29b Mon Sep 17 00:00:00 2001
+From a7e251e30d5d1c1262c11a68b29d1cb681da188a Mon Sep 17 00:00:00 2001
 From: Chanh Nguyen <chanh@os.amperecomputing.com>
 Date: Sun, 1 Dec 2024 09:07:08 +0000
 Subject: [PATCH 12/12] Improve IPv4 default gateway removal
@@ -16,14 +16,14 @@ Upstream-Status: Submitted [https://gerrit.openbmc.org/c/openbmc/bmcweb/+/76516]
 Change-Id: I17f8e8b42e2a51b677bce51c2ce6a463ba297a10
 Signed-off-by: Chanh Nguyen <chanh@os.amperecomputing.com>
 ---
- redfish-core/lib/ethernet.hpp | 49 ++++++++++++++++++++++++++++++++++-
- 1 file changed, 48 insertions(+), 1 deletion(-)
+ redfish-core/lib/ethernet.hpp | 47 ++++++++++++++++++++++++++++++++++-
+ 1 file changed, 46 insertions(+), 1 deletion(-)
 
 diff --git a/redfish-core/lib/ethernet.hpp b/redfish-core/lib/ethernet.hpp
-index 1e547e40..6282adfb 100644
+index 1e547e40..5506258b 100644
 --- a/redfish-core/lib/ethernet.hpp
 +++ b/redfish-core/lib/ethernet.hpp
-@@ -1399,7 +1399,54 @@ inline void handleDHCPPatch(
+@@ -1399,7 +1399,52 @@ inline void handleDHCPPatch(
  
      if (ipv4Active)
      {
@@ -47,7 +47,6 @@ index 1e547e40..6282adfb 100644
 +            [asyncResp, defaultGateway, ifaceId](
 +                const boost::system::error_code& ec,
 +                const dbus::utility::MapperGetSubTreeResponse& subtree) {
-+                bool ipv4GwUpdated = false;
 +                if (ec)
 +                {
 +                    BMCWEB_LOG_WARNING("D-Bus error: {}, {}", ec, ec.message());
@@ -59,7 +58,7 @@ index 1e547e40..6282adfb 100644
 +                    sdbusplus::asio::getProperty<std::string>(
 +                    *crow::connections::systemBus, "xyz.openbmc_project.Network", objectPath,
 +                    "xyz.openbmc_project.Network.IP", "Origin",
-+                    [asyncResp, defaultGateway, ifaceId, &ipv4GwUpdated](const boost::system::error_code& ec_property,
++                    [asyncResp, defaultGateway, ifaceId](const boost::system::error_code& ec_property,
 +                                const std::string& origin) {
 +                        if (ec_property)
 +                        {
@@ -67,10 +66,9 @@ index 1e547e40..6282adfb 100644
 +                            messages::internalError(asyncResp->res);
 +                            return;
 +                        }
-+                        if ((origin == "xyz.openbmc_project.Network.IP.AddressOrigin.Static") && !ipv4GwUpdated)
++                        if (origin == "xyz.openbmc_project.Network.IP.AddressOrigin.Static")
 +                        {
 +                            updateIPv4DefaultGateway(ifaceId, defaultGateway, asyncResp);
-+                            ipv4GwUpdated = true;
 +                        }
 +                    });
 +                }
@@ -79,3 +77,6 @@ index 1e547e40..6282adfb 100644
      }
      bool nextv4DHCPState =
          v4dhcpParms.dhcpv4Enabled ? *v4dhcpParms.dhcpv4Enabled : ipv4Active;
+-- 
+2.34.1
+
