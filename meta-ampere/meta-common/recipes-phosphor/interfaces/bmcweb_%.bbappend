@@ -23,6 +23,7 @@ SRC_URI += " \
             file://0008-LogService-Add-CPER-logs-crashdumps-to-FaultLog.patch \
             file://0009-LogService-Support-download-FaultLog-data-via-Additi.patch \
             file://0010-update-service-get-ApplyTime-from-Dbus.patch \
+            file://0011-Improve-IPv4-default-gateway-removal.patch \
             file://ampere-registries.json \
            "
 do_compile[network] = "1"

@@ -1,0 +1,101 @@
+From 3406a6d69dd2018ecae8388438772462d887cd05 Mon Sep 17 00:00:00 2001
+From: Chanh Nguyen <chanh@os.amperecomputing.com>
+Date: Sun, 1 Dec 2024 09:07:08 +0000
+Subject: [PATCH] Improve IPv4 default gateway removal
+
+Currently, when you disable DHCP, then the IPv4 default gateway
+will be removed. That caused the static IPv4 to work incorrectly.
+
+The code should check if any static IPv4 existed before removing
+the IPv4 default gateway.
+
+Fixes openbmc/bmcweb#294
+
+Upstream-Status: Submitted [https://gerrit.openbmc.org/c/openbmc/bmcweb/+/76516]
+
+Change-Id: I17f8e8b42e2a51b677bce51c2ce6a463ba297a10
+Signed-off-by: Chanh Nguyen <chanh@os.amperecomputing.com>
+---
+ redfish-core/lib/ethernet.hpp | 54 +++++++++++++++++++++++++++++++++--
+ 1 file changed, 51 insertions(+), 3 deletions(-)
+
+diff --git a/redfish-core/lib/ethernet.hpp b/redfish-core/lib/ethernet.hpp
+index 53e21c53..6c6dd24a 100644
+--- a/redfish-core/lib/ethernet.hpp
++++ b/redfish-core/lib/ethernet.hpp
+@@ -1395,6 +1395,9 @@ inline void handleSLAACAutoConfigPatch(
+ }
+ 
+ inline void handleDHCPPatch(
++    std::optional<std::vector<
++                    std::variant<nlohmann::json::object_t, std::nullptr_t>>>
++                    ipv4StaticAddresses,
+     const std::string& ifaceId, const EthernetInterfaceData& ethData,
+     const DHCPParameters& v4dhcpParms, const DHCPParameters& v6dhcpParms,
+     const std::shared_ptr<bmcweb::AsyncResp>& asyncResp)
+@@ -1402,9 +1405,54 @@ inline void handleDHCPPatch(
+     bool ipv4Active = translateDhcpEnabledToBool(ethData.dhcpEnabled, true);
+     bool ipv6Active = translateDhcpEnabledToBool(ethData.dhcpEnabled, false);
+ 
+-    if (ipv4Active)
++    if (ipv4Active && !ipv4StaticAddresses)
+     {
+-        updateIPv4DefaultGateway(ifaceId, "", asyncResp);
++        sdbusplus::asio::getProperty<std::string>(
++        *crow::connections::systemBus, "xyz.openbmc_project.Network", "/xyz/openbmc_project/network/" + ifaceId,
++        "xyz.openbmc_project.Network.EthernetInterface", "DefaultGateway",
++        [asyncResp, ifaceId](const boost::system::error_code& ec_gw,
++                    const std::string& defaultGateway) {
++            if (ec_gw)
++            {
++                BMCWEB_LOG_ERROR("Failed to read default gateway: {}", ec_gw);
++                messages::internalError(asyncResp->res);
++                return;
++            }
++
++            updateIPv4DefaultGateway(ifaceId, "", asyncResp);
++            constexpr std::array<std::string_view, 1> netInterfaces = {
++            "xyz.openbmc_project.Network.IP"};
++            dbus::utility::getSubTree("/xyz/openbmc_project/network/" + ifaceId, 0, netInterfaces,
++            [asyncResp, defaultGateway, ifaceId](
++                const boost::system::error_code& ec,
++                const dbus::utility::MapperGetSubTreeResponse& subtree) {
++                if (ec)
++                {
++                    BMCWEB_LOG_WARNING("D-Bus error: {}, {}", ec, ec.message());
++                    messages::internalError(asyncResp->res);
++                    return;
++                }
++                for (const auto& [objectPath, serviceMap] : subtree)
++                {
++                    sdbusplus::asio::getProperty<std::string>(
++                    *crow::connections::systemBus, "xyz.openbmc_project.Network", objectPath,
++                    "xyz.openbmc_project.Network.IP", "Origin",
++                    [asyncResp, defaultGateway, ifaceId](const boost::system::error_code& ec_property,
++                                const std::string& origin) {
++                        if (ec_property)
++                        {
++                            BMCWEB_LOG_ERROR("Failed to read IPv4 type: {}", ec_property);
++                            messages::internalError(asyncResp->res);
++                            return;
++                        }
++                        if (origin == "xyz.openbmc_project.Network.IP.AddressOrigin.Static")
++                        {
++                            updateIPv4DefaultGateway(ifaceId, defaultGateway, asyncResp);
++                        }
++                    });
++                }
++            });
++        });
+     }
+     bool nextv4DHCPState =
+         v4dhcpParms.dhcpv4Enabled ? *v4dhcpParms.dhcpv4Enabled : ipv4Active;
+@@ -2416,7 +2464,7 @@ inline void requestEthernetInterfacesRoutes(App& app)
+                             return;
+                         }
+ 
+-                        handleDHCPPatch(ifaceId, ethData, v4dhcpParms,
++                        handleDHCPPatch(ipv4StaticAddresses, ifaceId, ethData, v4dhcpParms,
+                                         v6dhcpParms, asyncResp);
+ 
+                         if (hostname)
