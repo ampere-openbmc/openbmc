@@ -1,4 +1,4 @@
-From a7e251e30d5d1c1262c11a68b29d1cb681da188a Mon Sep 17 00:00:00 2001
+From c82d4d38865b1cb3de98adb5292298e5ce5312f7 Mon Sep 17 00:00:00 2001
 From: Chanh Nguyen <chanh@os.amperecomputing.com>
 Date: Sun, 1 Dec 2024 09:07:08 +0000
 Subject: [PATCH 12/12] Improve IPv4 default gateway removal
@@ -16,16 +16,29 @@ Upstream-Status: Pending
 Change-Id: I17f8e8b42e2a51b677bce51c2ce6a463ba297a10
 Signed-off-by: Chanh Nguyen <chanh@os.amperecomputing.com>
 ---
- redfish-core/lib/ethernet.hpp | 47 ++++++++++++++++++++++++++++++++++-
- 1 file changed, 46 insertions(+), 1 deletion(-)
+ redfish-core/lib/ethernet.hpp | 54 +++++++++++++++++++++++++++++++++--
+ 1 file changed, 51 insertions(+), 3 deletions(-)
 
 diff --git a/redfish-core/lib/ethernet.hpp b/redfish-core/lib/ethernet.hpp
-index 1e547e40..5506258b 100644
+index 1e547e40..61b03695 100644
 --- a/redfish-core/lib/ethernet.hpp
 +++ b/redfish-core/lib/ethernet.hpp
-@@ -1399,7 +1399,52 @@ inline void handleDHCPPatch(
+@@ -1390,6 +1390,9 @@ inline void handleSLAACAutoConfigPatch(
+ }
  
-     if (ipv4Active)
+ inline void handleDHCPPatch(
++    std::optional<std::vector<
++                    std::variant<nlohmann::json::object_t, std::nullptr_t>>>
++                    ipv4StaticAddresses,
+     const std::string& ifaceId, const EthernetInterfaceData& ethData,
+     const DHCPParameters& v4dhcpParms, const DHCPParameters& v6dhcpParms,
+     const std::shared_ptr<bmcweb::AsyncResp>& asyncResp)
+@@ -1397,9 +1400,54 @@ inline void handleDHCPPatch(
+     bool ipv4Active = translateDhcpEnabledToBool(ethData.dhcpEnabled, true);
+     bool ipv6Active = translateDhcpEnabledToBool(ethData.dhcpEnabled, false);
+ 
+-    if (ipv4Active)
++    if (ipv4Active && !ipv4StaticAddresses)
      {
 -        updateIPv4DefaultGateway(ifaceId, "", asyncResp);
 +        sdbusplus::asio::getProperty<std::string>(
@@ -77,6 +90,15 @@ index 1e547e40..5506258b 100644
      }
      bool nextv4DHCPState =
          v4dhcpParms.dhcpv4Enabled ? *v4dhcpParms.dhcpv4Enabled : ipv4Active;
+@@ -2407,7 +2455,7 @@ inline void requestEthernetInterfacesRoutes(App& app)
+                             return;
+                         }
+ 
+-                        handleDHCPPatch(ifaceId, ethData, v4dhcpParms,
++                        handleDHCPPatch(ipv4StaticAddresses, ifaceId, ethData, v4dhcpParms,
+                                         v6dhcpParms, asyncResp);
+ 
+                         if (hostname)
 -- 
 2.34.1
 
