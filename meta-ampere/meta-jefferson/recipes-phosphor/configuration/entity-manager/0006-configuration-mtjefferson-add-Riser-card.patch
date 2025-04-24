@@ -1,0 +1,65 @@
+From 6aa73782347df9be3222a44ae283bb3b3b511c58 Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Thu, 24 Apr 2025 03:13:03 +0000
+Subject: [PATCH 6/6] configuration: mtjefferson: add Riser card
+
+This adds Riser card to mtjefferson_riser.json
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ configurations/meson.build            |  1 +
+ configurations/mtjefferson_riser.json | 31 +++++++++++++++++++++++++++
+ 2 files changed, 32 insertions(+)
+ create mode 100644 configurations/mtjefferson_riser.json
+
+diff --git a/configurations/meson.build b/configurations/meson.build
+index 3ace6a0..f7a7ebd 100644
+--- a/configurations/meson.build
++++ b/configurations/meson.build
+@@ -143,6 +143,7 @@ configs = [
+     'mtjefferson_bmc.json',
+     'mtjefferson_bp.json',
+     'mtjefferson_mb.json',
++    'mtjefferson_riser.json',
+     'mtmitchell_bmc.json',
+     'mtmitchell_bp.json',
+     'mtmitchell_mb.json',
+diff --git a/configurations/mtjefferson_riser.json b/configurations/mtjefferson_riser.json
+new file mode 100644
+index 0000000..3248bde
+--- /dev/null
++++ b/configurations/mtjefferson_riser.json
+@@ -0,0 +1,31 @@
++{
++    "Exposes": [
++        {
++            "Address": "$address",
++            "Bus": "$bus",
++            "Name": "Jefferson_Riser",
++            "Type": "EEPROM"
++        }
++    ],
++    "Name": "Mt.Jefferson_Riser",
++    "Probe": [
++        "xyz.openbmc_project.FruDevice({'BOARD_PART_NUMBER': 'CRS201P'})",
++        "AND",
++        "FOUND('Mt.Jefferson_Motherboard')"
++    ],
++    "Type": "Board",
++    "xyz.openbmc_project.Inventory.Decorator.Asset": {
++        "BuildDate": "$BOARD_MANUFACTURE_DATE",
++        "Manufacturer": "$BOARD_MANUFACTURER",
++        "Model": "$BOARD_PRODUCT_NAME",
++        "PartNumber": "$BOARD_PART_NUMBER",
++        "SerialNumber": "$BOARD_SERIAL_NUMBER"
++    },
++    "xyz.openbmc_project.Inventory.Decorator.Replaceable": {
++        "FieldReplaceable": false,
++        "HotPluggable": false
++    },
++    "xyz.openbmc_project.Inventory.Decorator.Revision": {
++        "Version": "$BOARD_INFO_AM1"
++    }
++}
