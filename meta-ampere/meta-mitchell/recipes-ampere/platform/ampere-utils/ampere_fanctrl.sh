@@ -1,9 +1,12 @@
 #!/bin/bash
-# shellcheck disable=SC2004
 
 fan_hwmon_num_8_20=$(ls /sys/bus/i2c/drivers/max31790/8-0020/hwmon)
 fan_hwmon_num_8_2f=$(ls /sys/bus/i2c/drivers/max31790/8-002f/hwmon)
 fan_hwmon_path="/sys/class/hwmon"
+DISABLED_STAT="Disabled"
+ENABLED_STAT="Enabled"
+ACTIVE_STR="active"
+MANUAL_CONTROL_SERV="ampere-fanctrl-manual.service"
 
 phosphor_fan_service=("phosphor-fan-control@0.service"
                       "phosphor-fan-monitor@0.service"
@@ -23,21 +26,28 @@ hwmon_list=("$fan_hwmon_num_8_2f"
             "$fan_hwmon_num_8_20")
 
 function stop_phosphor_fan_services() {
+    status=$(getstatus)
+    if [[ "$status" == *"$DISABLED_STAT" ]]; then
+        echo "Fan control status is already disabled"
+        exit 0
+    fi
+
+    systemctl start $MANUAL_CONTROL_SERV
+
     for service in "${phosphor_fan_service[@]}"
     do
         systemctl stop "$service"
-        busctl call org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager MaskUnitFiles asbb 1 "$service" true true
     done
-    systemctl daemon-reload
 }
 
 function start_phosphor_fan_services() {
-    for service in "${phosphor_fan_service[@]}"
-    do
-        busctl call org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager UnmaskUnitFiles asb 1 "$service" true
-    done
+    status=$(getstatus)
+    if [[ "$status" == *"$ENABLED_STAT" ]]; then
+        echo "Fan control status is already enabled"
+        exit 0
+    fi
 
-    systemctl daemon-reload
+    systemctl stop $MANUAL_CONTROL_SERV
 
     for service in "${phosphor_fan_service[@]}"
     do
@@ -46,13 +56,13 @@ function start_phosphor_fan_services() {
 }
 
 function getstatus() {
-    status="Enabled"
+    status="$ENABLED_STAT"
     ret=0
     for service in "${phosphor_fan_service[@]}"
     do
-        service_stt=$(systemctl is-active "$service" | grep inactive)
-        if [ -n "$service_stt" ]; then
-            status="Disabled"
+        service_stat=$(systemctl is-active "$service")
+        if [ "$service_stat" != "$ACTIVE_STR" ]; then
+            status="$DISABLED_STAT"
             ret=1
             break
         fi
@@ -83,7 +93,7 @@ function setspeed() {
         hwmon_num=${hwmon_list[$id]}
         fan_pwm=pwm${pwm_list[$id]}
         # Scale PWM to 255, adding 50 for rounding.
-        pwm_scaled=$(((($pwm_val * 255) + 50) / 100))
+        pwm_scaled=$((((pwm_val * 255) + 50) / 100))
 
         if ! (echo "$pwm_scaled" > "${fan_hwmon_path}/${hwmon_num}/${fan_pwm}");
         then
@@ -143,7 +153,7 @@ function getspeed() {
 # Usage of this utility
 function usage() {
     echo "Usage:"
-    echo "  ampere_fanctrl.sh [getstatus] [setstatus <0:enable|1:disable>] [setspeed all/<fan> <duty>] [getspeed <fan>]"
+    echo "  ampere_fanctrl.sh [getstatus] [setstatus <0:enable|1:disable>] [setspeed all/<fan> <duty>] [getspeed all/<fan>]"
     echo "  fan: 0-5"
     echo "  duty: 1-100"
 }

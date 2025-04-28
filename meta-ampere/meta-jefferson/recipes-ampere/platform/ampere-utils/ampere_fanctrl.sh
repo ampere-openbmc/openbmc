@@ -1,5 +1,4 @@
 #!/bin/bash
-# shellcheck disable=SC2004
 
 fan_ctrl_bus=0x08
 fan_ctrl_addr=0x5c
@@ -21,6 +20,11 @@ fan_hwmon_num=$(ls /sys/bus/i2c/drivers/adt7462/8-005c/hwmon)
 fan_hwmon_path="/sys/class/hwmon/$fan_hwmon_num"
 adt7462_bus_addr="8-005c"
 
+DISABLED_STAT="Disabled"
+ENABLED_STAT="Enabled"
+ACTIVE_STR="active"
+MANUAL_CONTROL_SERV="ampere-fanctrl-manual.service"
+
 phosphor_fan_service=("phosphor-fan-control@0.service"
                       "phosphor-fan-monitor@0.service"
                       "phosphor-fan-presence-tach@0.service"
@@ -33,21 +37,28 @@ input_list=(1 3 5 7)
 pwm_list=(1 2 3 4)
 
 function stop_phosphor_fan_services() {
+    status=$(getstatus)
+    if [[ "$status" == *"$DISABLED_STAT" ]]; then
+        echo "Fan control status is already disabled"
+        exit 0
+    fi
+
+    systemctl start $MANUAL_CONTROL_SERV
+
     for service in "${phosphor_fan_service[@]}"
     do
         systemctl stop "$service"
-        busctl call org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager MaskUnitFiles asbb 1 "$service" true true
     done
-    systemctl daemon-reload
 }
 
 function start_phosphor_fan_services() {
-    for service in "${phosphor_fan_service[@]}"
-    do
-        busctl call org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager UnmaskUnitFiles asb 1 "$service" true
-    done
+    status=$(getstatus)
+    if [[ "$status" == *"$ENABLED_STAT" ]]; then
+        echo "Fan control status is already enabled"
+        exit 0
+    fi
 
-    systemctl daemon-reload
+    systemctl stop $MANUAL_CONTROL_SERV
 
     for service in "${phosphor_fan_service[@]}"
     do
@@ -71,21 +82,21 @@ function fan_controller_init() {
     i2cset -f -y $fan_ctrl_bus $fan_ctrl_addr $adt7462_reg_max_pwm $adt7462_max_pwm
     # Set High frequency mode
     val=$(i2cget -f -y $fan_ctrl_bus $fan_ctrl_addr $adt7462_reg_cfg2)
-    val=$(($val | $adt7462_high_freq_mode))
+    val=$((val | adt7462_high_freq_mode))
     i2cset -f -y $fan_ctrl_bus $fan_ctrl_addr $adt7462_reg_cfg2 $val
     # Enable TACH
     i2cset -f -y $fan_ctrl_bus $fan_ctrl_addr $adt7462_reg_tach_enable $adt7462_tach_enable
     # Set PWM Manual mode
     for i in $(seq 0 $((fan_nums - 1)))
     do
-        reg_pwm_cfg=$(($adt7462_reg_pwm_cfg + $i))
+        reg_pwm_cfg=$((adt7462_reg_pwm_cfg + i))
         val=$(i2cget -f -y $fan_ctrl_bus $fan_ctrl_addr $reg_pwm_cfg)
-        val=$(($val | $adt7462_bhvr_manual_mode))
+        val=$((val | adt7462_bhvr_manual_mode))
         i2cset -f -y $fan_ctrl_bus $fan_ctrl_addr $reg_pwm_cfg $val
     done
     # Setup complete
     val=$(i2cget -f -y $fan_ctrl_bus $fan_ctrl_addr $adt7462_reg_cfg1)
-    val=$(($val | $adt7462_setup_complete))
+    val=$((val | adt7462_setup_complete))
     i2cset -f -y $fan_ctrl_bus $fan_ctrl_addr $adt7462_reg_cfg1 $val
     # Bind ADT7462 driver
     echo "Bind the ADT7462 driver"
@@ -93,13 +104,17 @@ function fan_controller_init() {
 }
 
 function getstatus() {
-    status="Enabled"
+    status="$ENABLED_STAT"
     ret=0
     for service in "${phosphor_fan_service[@]}"
     do
-        service_stt=$(systemctl is-active "$service" | grep inactive)
-        if [ -n "$service_stt" ]; then
-            status="Disabled"
+        service_stat=$(systemctl is-active "$service")
+        if [ "$service_stat" != "$ACTIVE_STR" ]; then
+            if [ "$service" == "phosphor-pid-control.service" ] &&
+            [ "$(obmcutil chassisstate | awk -F. '{print $NF}')" == 'Off' ]; then
+                continue
+            fi
+            status="$DISABLED_STAT"
             ret=1
             break
         fi
@@ -129,7 +144,7 @@ function setspeed() {
         # Get pwm sysfs file of the fan
         fan_pwm=pwm${pwm_list[$id]}
         # Scale PWM to 255, adding 50 for rounding.
-        pwm_scaled=$(((($pwm_val * 255) + 50) / 100))
+        pwm_scaled=$((((pwm_val * 255) + 50) / 100))
 
         if ! (echo "$pwm_scaled" > "${fan_hwmon_path}/${fan_pwm}");
         then
@@ -178,7 +193,7 @@ function getspeed() {
 # Usage of this utility
 function usage() {
     echo "Usage:"
-    echo "  ampere_fanctrl.sh [getstatus] [setstatus <0:enable|1:disable>] [setspeed all/<fan> <duty>] [getspeed <fan>]"
+    echo "  ampere_fanctrl.sh [getstatus] [setstatus <0:enable|1:disable>] [setspeed all/<fan> <duty>] [getspeed all/<fan>]"
     echo "  fan: 0-3"
     echo "  duty: 1-100"
 }

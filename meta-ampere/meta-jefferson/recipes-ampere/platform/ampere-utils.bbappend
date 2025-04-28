@@ -2,6 +2,12 @@ FILESEXTRAPATHS:append := "${THISDIR}/${PN}:"
 
 INSANE_SKIP:${PN} = "already-stripped"
 
+inherit systemd
+inherit obmc-phosphor-systemd
+
+S = "${WORKDIR}/sources"
+UNPACKDIR = "${S}"
+
 SRC_URI:append = " \
                   file://ampere_firmware_upgrade.sh \
                   file://ampere_flash_bios.sh \
@@ -10,7 +16,10 @@ SRC_URI:append = " \
                   file://ampere_firmware_version.sh \
                   file://ampere_scandump_mode.sh \
                   file://ampere_power_on_driver_binder.sh \
+                  file://ampere-fanctrl-manual.service \
                  "
+
+SYSTEMD_SERVICE:${PN} += " ampere-fanctrl-manual.service"
 
 do_install:append() {
     install -d ${D}/usr/sbin
