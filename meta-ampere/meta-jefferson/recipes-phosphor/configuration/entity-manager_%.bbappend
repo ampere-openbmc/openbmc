@@ -2,6 +2,7 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
 SRC_URI += " \
             file://blacklist.json \
             file://0004-configurations-remove-redundant-Backplane-Version.patch \
+            file://0005-configurations-mtjefferson-update-PowerState-for-12V.patch \
            "
 
 do_install:append() {
