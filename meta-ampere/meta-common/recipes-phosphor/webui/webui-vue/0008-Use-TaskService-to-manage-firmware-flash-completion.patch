@@ -1,0 +1,105 @@
+From 3c66d88ed57fe1fc72b6b230e1827de24728b4c1 Mon Sep 17 00:00:00 2001
+From: Huy Anh Le <hule@amperecomputing.com>
+Date: Tue, 29 Apr 2025 15:13:58 +0700
+Subject: [PATCH] Use TaskService to manage firmware flash completion
+
+Currently, the code only handled firmware upload by starting
+a 6-minute timer and then displaying the "Verify Update" pop-up
+regardless of whether the firmware flash process was completed or not.
+
+This commit improves the behavior by:
+- Checking the corresponding TaskService status to determine if the
+firmware flash process is completed.
+- If the status is "completed", the timeout is cleared, and the
+"Verify Update" pop-up is displayed immediately.
+- If the status is not "completed", the timer will continue to
+wait for the full 6 minutes before displaying the "Verify Update" pop-up.
+
+This ensures that the message is displayed promptly without affecting
+the user experience.
+
+Upstream-Status: Pending
+
+Signed-off-by: Huy Anh Le <hule@amperecomputing.com>
+---
+ src/store/modules/Operations/FirmwareStore.js | 16 ++++++++++++++
+ .../Firmware/FirmwareFormUpdate.vue           | 22 ++++++++++++-------
+ 2 files changed, 30 insertions(+), 8 deletions(-)
+
+diff --git a/src/store/modules/Operations/FirmwareStore.js b/src/store/modules/Operations/FirmwareStore.js
+index 411b0bd..cfc24cf 100644
+--- a/src/store/modules/Operations/FirmwareStore.js
++++ b/src/store/modules/Operations/FirmwareStore.js
+@@ -155,6 +155,22 @@ const FirmwareStore = {
+         .post(state.multipartHttpPushUri, formData, {
+           headers: { 'Content-Type': 'multipart/form-data' },
+         })
++        .then(({ data }) => {
++          const checkTaskState = async (taskUri) => {
++            const { data } = await api.get(taskUri);
++            if (data.TaskState === 'Completed') {
++              return true;
++            } else if (data.TaskState === 'Running') {
++              await new Promise((resolve) => setTimeout(resolve, 10000)); // Wait for 10 seconds
++              return checkTaskState(taskUri); // Retry
++            } else {
++              throw new Error(
++                i18n.global.t('pageFirmware.toast.errorUpdateFirmware'),
++              );
++            }
++          };
++          return checkTaskState(data['@odata.id']);
++        })
+         .catch((error) => {
+           console.log(error);
+           throw new Error(
+diff --git a/src/views/Operations/Firmware/FirmwareFormUpdate.vue b/src/views/Operations/Firmware/FirmwareFormUpdate.vue
+index ee7465d..3773935 100644
+--- a/src/views/Operations/Firmware/FirmwareFormUpdate.vue
++++ b/src/views/Operations/Firmware/FirmwareFormUpdate.vue
+@@ -93,14 +93,7 @@ export default {
+     updateFirmware() {
+       this.startLoader();
+       const timerId = setTimeout(() => {
+-        this.endLoader();
+-        this.infoToast(
+-          i18n.global.t('pageFirmware.toast.verifyUpdateMessage'),
+-          {
+-            title: i18n.global.t('pageFirmware.toast.verifyUpdate'),
+-            refreshAction: true,
+-          },
+-        );
++        this.showErrorToast();
+       }, 360000);
+       this.infoToast(i18n.global.t('pageFirmware.toast.updateStartedMessage'), {
+         title: i18n.global.t('pageFirmware.toast.updateStarted'),
+@@ -114,6 +107,12 @@ export default {
+           image: this.file,
+           targets: ['/redfish/v1/UpdateService/FirmwareInventory/bios_active'],
+         })
++        .then((isCompleted) => {
++          if (isCompleted) {
++            this.showErrorToast();
++            clearTimeout(timerId);
++          }
++        })
+         .catch(({ message }) => {
+           this.endLoader();
+           this.errorToast(message);
+@@ -129,6 +128,13 @@ export default {
+       this.file = file;
+       this.v$.file.$touch();
+     },
++    showErrorToast() {
++      this.endLoader();
++      this.infoToast(i18n.global.t('pageFirmware.toast.verifyUpdateMessage'), {
++        title: i18n.global.t('pageFirmware.toast.verifyUpdate'),
++        refreshAction: true,
++      });
++    },
+   },
+ };
+ </script>
+-- 
+2.43.0
+
