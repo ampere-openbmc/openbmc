@@ -2,6 +2,7 @@
 Description=Check Host%i status before obmc-host-startmin
 After=obmc-host-started@%i.target
 After=obmc-power-start-pre@%i.target
+After=obmc-chassis-poweron@%i.target
 Conflicts=obmc-host-stop@%i.target
 Conflicts=phosphor-reset-host-check@%i.service
 OnFailure=obmc-host-quiesce@%i.target
