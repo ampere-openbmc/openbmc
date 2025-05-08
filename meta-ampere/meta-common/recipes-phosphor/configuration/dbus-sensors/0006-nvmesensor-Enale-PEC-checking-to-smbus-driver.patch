@@ -1,0 +1,94 @@
+From 311fbcf280781dd081bd429d397eb9e8f61f4093 Mon Sep 17 00:00:00 2001
+From: Chanh Nguyen <chanh@os.amperecomputing.com>
+Date: Thu, 8 May 2025 15:09:13 +0000
+Subject: [PATCH] nvmesensor: Enale PEC checking to smbus driver
+
+Following the NVM Express Management Interface Specification
+document [1], this commit adds PEC (An 8 bit CRC calculated
+over the SMBus address, command code, second SMBus address,
+and returned data) checking to ensure the integrity of data
+transmission.
+
+[1] https://nvmexpress.org/wp-content/uploads/NVM-Express-Management-Interface-Specification-1.2c-2022.10.06-Ratified-1.pdf
+
+Upstream-Status: Pending
+
+Signed-off-by: Chanh Nguyen <chanh@os.amperecomputing.com>
+---
+ meson.options                 |  6 ++++++
+ src/dbus-sensor_config.h.in   |  4 +++-
+ src/meson.build               |  4 ++++
+ src/nvme/NVMeBasicContext.cpp | 10 ++++++++++
+ 4 files changed, 23 insertions(+), 1 deletion(-)
+
+diff --git a/meson.options b/meson.options
+index c8a8d34..c4fa028 100644
+--- a/meson.options
++++ b/meson.options
+@@ -1,3 +1,9 @@
++option(
++    'nvme-pec-checking',
++    type: 'boolean',
++    value: false,
++    description: 'Enables Nvme PEC checking from smbus driver',
++)
+ option(
+     'adc',
+     type: 'feature',
+diff --git a/src/dbus-sensor_config.h.in b/src/dbus-sensor_config.h.in
+index 8045676..77929b0 100644
+--- a/src/dbus-sensor_config.h.in
++++ b/src/dbus-sensor_config.h.in
+@@ -1,7 +1,9 @@
+ #pragma once
+ 
++#mesondefine NVME_PEC_CHECKING
++
+ // clang-format off
+ constexpr const int validateUnsecureFeature = @VALIDATION_UNSECURE_FEATURE@;
+ 
+ constexpr const int insecureSensorOverride = @INSECURE_UNRESTRICTED_SENSOR_OVERRIDE@;
+-// clang-format on
+\ No newline at end of file
++// clang-format on
+diff --git a/src/meson.build b/src/meson.build
+index ae5087c..b26bd41 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -1,4 +1,5 @@
+ conf_data = configuration_data()
++
+ conf_data.set10(
+     'VALIDATION_UNSECURE_FEATURE',
+     get_option('validate-unsecure-feature').allowed(),
+@@ -7,6 +8,9 @@ conf_data.set10(
+     'INSECURE_UNRESTRICTED_SENSOR_OVERRIDE',
+     get_option('insecure-sensor-override').allowed(),
+ )
++
++conf_data.set10('NVME_PEC_CHECKING', get_option('nvme-pec-checking'))
++
+ configure_file(
+     input: 'dbus-sensor_config.h.in',
+     output: 'dbus-sensor_config.h',
+diff --git a/src/nvme/NVMeBasicContext.cpp b/src/nvme/NVMeBasicContext.cpp
+index 509407a..9aff734 100644
+--- a/src/nvme/NVMeBasicContext.cpp
++++ b/src/nvme/NVMeBasicContext.cpp
+@@ -99,6 +99,16 @@ static void execBasicQuery(int bus, uint8_t addr, uint8_t cmd,
+             return;
+         }
+ 
++#if NVME_PEC_CHECKING
++        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
++        if (::ioctl(fileHandle.handle(), I2C_PEC, 1) < 0)
++        {
++            lg2::warning(
++                "Could not set PEC checking to device '{ADDR}' on bus '{BUS}'",
++                "ADDR", lg2::hex, addr, "BUS", bus);
++        }
++#endif
++
+         resp.resize(UINT8_MAX + 1);
+ 
+         /* Issue the NVMe MI basic command */
