@@ -1,7 +1,7 @@
-From a42346b599f5ebba2d0ac7bb37cda7f1f242f641 Mon Sep 17 00:00:00 2001
+From 06984f828966dacc97709d1441b5e2e03f16fa67 Mon Sep 17 00:00:00 2001
 From: Dung Cao <dung@os.amperecomputing.com>
 Date: Tue, 20 Aug 2024 16:38:36 +0700
-Subject: [PATCH] Support restore FaultLog entries after service restart
+Subject: [PATCH 1/2] Support restore FaultLog entries after service restart
 
 Implemented serialization of faultlog entry attributes using the
 nlohmann::json library. Serializing attributes including type,
@@ -43,7 +43,7 @@ index b7fa3a0..027c1db 100644
              else
              {
 diff --git a/dump_manager_faultlog.cpp b/dump_manager_faultlog.cpp
-index 7d03c8b..5c96e56 100644
+index 7d03c8b..e29bb84 100644
 --- a/dump_manager_faultlog.cpp
 +++ b/dump_manager_faultlog.cpp
 @@ -87,46 +87,30 @@ sdbusplus::message::object_path Manager::createDump(
@@ -120,7 +120,7 @@ index 7d03c8b..5c96e56 100644
 +        fs::path faultlogPath(FAULTLOG_DUMP_PATH);
 +        uint32_t id = it->first;
 +        faultlogPath /= std::to_string(id);
-+        fs::remove(faultlogPath);
++        fs::remove_all(faultlogPath);
 +    }
 +
      phosphor::dump::Manager::deleteAll();
@@ -134,7 +134,7 @@ index 7d03c8b..5c96e56 100644
 +    fs::path faultlogPath(FAULTLOG_DUMP_PATH);
 +    uint32_t id = it->first;
 +    faultlogPath /= std::to_string(id);
-+    fs::remove(faultlogPath);
++    fs::remove_all(faultlogPath);
 +
 +    /* Delete the FaultLog entry */
      entries.erase(it);
