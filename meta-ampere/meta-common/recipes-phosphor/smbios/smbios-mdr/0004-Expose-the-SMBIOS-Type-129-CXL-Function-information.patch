@@ -1,0 +1,824 @@
+From 8a4ec3ff31b04d1ce31ca8587768ac009abd0160 Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Sun, 25 May 2025 13:37:27 +0000
+Subject: [PATCH] Expose the SMBIOS Type 129 CXL Function information
+
+This expose the SMBIOS type 129 CXL Function information to dbus.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ include/cxlLogicalDevice.hpp | 66 ++++++++++++++++++++++++++++++
+ include/mdrv2.hpp            |  2 +
+ include/memory.hpp           | 78 ++++++++++++++++++++++++++++++++++++
+ include/memoryChunks.hpp     | 66 ++++++++++++++++++++++++++++++
+ include/memoryDomain.hpp     | 51 +++++++++++++++++++++++
+ include/pcieCxlFunction.hpp  | 64 +++++++++++++++++++++++++++++
+ include/pciedevice.hpp       | 18 +++++++++
+ include/smbios_mdrv2.hpp     |  1 +
+ src/cxlLogicalDevice.cpp     | 51 +++++++++++++++++++++++
+ src/mdrv2.cpp                | 47 ++++++++++++++++++++++
+ src/memory.cpp               | 59 +++++++++++++++++++++++++++
+ src/memoryChunks.cpp         | 41 +++++++++++++++++++
+ src/memoryDomain.cpp         | 22 ++++++++++
+ src/meson.build              |  5 +++
+ src/pcieCxlFunction.cpp      | 65 ++++++++++++++++++++++++++++++
+ 15 files changed, 636 insertions(+)
+ create mode 100644 include/cxlLogicalDevice.hpp
+ create mode 100644 include/memory.hpp
+ create mode 100644 include/memoryChunks.hpp
+ create mode 100644 include/memoryDomain.hpp
+ create mode 100644 include/pcieCxlFunction.hpp
+ create mode 100644 src/cxlLogicalDevice.cpp
+ create mode 100644 src/memory.cpp
+ create mode 100644 src/memoryChunks.cpp
+ create mode 100644 src/memoryDomain.cpp
+ create mode 100644 src/pcieCxlFunction.cpp
+
+diff --git a/include/cxlLogicalDevice.hpp b/include/cxlLogicalDevice.hpp
+new file mode 100644
+index 0000000..178dfca
+--- /dev/null
++++ b/include/cxlLogicalDevice.hpp
+@@ -0,0 +1,66 @@
++#pragma once
++#include "smbios_mdrv2.hpp"
++
++#include <xyz/openbmc_project/Association/Definitions/server.hpp>
++#include <xyz/openbmc_project/Inventory/Item/CXLLogicalDevice/server.hpp>
++#include <xyz/openbmc_project/State/Decorator/OperationalStatus/server.hpp>
++
++namespace phosphor
++{
++
++namespace smbios
++{
++
++using cxlInterface =
++    sdbusplus::server::xyz::openbmc_project::inventory::item::CXLLogicalDevice;
++using operationalStatus = sdbusplus::xyz::openbmc_project::State::Decorator::
++    server::OperationalStatus;
++using association =
++    sdbusplus::server::xyz::openbmc_project::association::Definitions;
++
++class CxlLogicalDevice :
++    sdbusplus::server::object_t<cxlInterface, operationalStatus, association>
++{
++  public:
++    CxlLogicalDevice() = delete;
++    CxlLogicalDevice(const CxlLogicalDevice&) = delete;
++    CxlLogicalDevice& operator=(const CxlLogicalDevice&) = delete;
++    CxlLogicalDevice(CxlLogicalDevice&&) = delete;
++    CxlLogicalDevice& operator=(CxlLogicalDevice&&) = delete;
++    ~CxlLogicalDevice() = default;
++
++    struct CxlLogicalDeviceInfo
++    {
++        uint64_t memoryCapacity;
++    } __attribute__((packed));
++
++    CxlLogicalDevice(sdbusplus::bus_t& bus, const std::string& objPath,
++                     CxlLogicalDeviceInfo* deviceInfo,
++                     const std::string& funcObjPath,
++                     const std::string& pcieDeviceObjPath,
++                     const std::string& memoryChunksObjPath,
++                     const std::string& memoryDomainObjPath) :
++        sdbusplus::server::object_t<cxlInterface, operationalStatus,
++                                    association>(bus, objPath.c_str()),
++        objectPath(objPath), funcObjectPath(funcObjPath),
++        pcieDeviceObjectPath(pcieDeviceObjPath),
++        memoryChunksObjectPath(memoryChunksObjPath),
++        memoryDomainObjectPath(memoryDomainObjPath), cxlInfo(deviceInfo)
++    {
++        cxlUpdate();
++    }
++
++    void cxlUpdate();
++
++  private:
++    std::string objectPath;
++    std::string funcObjectPath;
++    std::string pcieDeviceObjectPath;
++    std::string memoryChunksObjectPath;
++    std::string memoryDomainObjectPath;
++    CxlLogicalDeviceInfo* cxlInfo;
++};
++
++} // namespace smbios
++
++} // namespace phosphor
+diff --git a/include/mdrv2.hpp b/include/mdrv2.hpp
+index 52004c9..7498944 100644
+--- a/include/mdrv2.hpp
++++ b/include/mdrv2.hpp
+@@ -18,6 +18,7 @@
+ #include "cpu.hpp"
+ #include "dimm.hpp"
+ #include "firmware_inventory.hpp"
++#include "pcieCxlFunction.hpp"
+ #include "pcieNetworkFunction.hpp"
+ #include "pcieStorageFunction.hpp"
+ #include "pciedevice.hpp"
+@@ -199,6 +200,7 @@ class MDRV2 :
+     std::vector<std::unique_ptr<PcieDevice>> pcieDevices;
+     std::vector<std::unique_ptr<PCIeStorageFunction>> pcieStorageFuncs;
+     std::vector<std::unique_ptr<PCIeNetworkFunction>> pcieNetworkFuncs;
++    std::vector<std::unique_ptr<PCIeCxlFunction>> pcieCxlFuncs;
+     std::vector<std::unique_ptr<Tpm>> tpms;
+     std::vector<std::unique_ptr<FirmwareInventory>> firmwareCollection;
+     std::unique_ptr<System> system;
+diff --git a/include/memory.hpp b/include/memory.hpp
+new file mode 100644
+index 0000000..5daf3e4
+--- /dev/null
++++ b/include/memory.hpp
+@@ -0,0 +1,78 @@
++#pragma once
++#include "smbios_mdrv2.hpp"
++
++#include <xyz/openbmc_project/Association/Definitions/server.hpp>
++#include <xyz/openbmc_project/Inventory/Item/Dimm/server.hpp>
++#include <xyz/openbmc_project/Inventory/Item/PersistentMemory/PowerManagementPolicy/server.hpp>
++#include <xyz/openbmc_project/State/Decorator/OperationalStatus/server.hpp>
++
++namespace phosphor
++{
++
++namespace smbios
++{
++
++using memoryInterface =
++    sdbusplus::server::xyz::openbmc_project::inventory::item::Dimm;
++using operationalStatus = sdbusplus::xyz::openbmc_project::State::Decorator::
++    server::OperationalStatus;
++using association =
++    sdbusplus::server::xyz::openbmc_project::association::Definitions;
++using memoryTechType =
++    sdbusplus::server::xyz::openbmc_project::inventory::item::Dimm::MemoryTech;
++using powerManagementPolicy = sdbusplus::server::xyz::openbmc_project::
++    inventory::item::persistent_memory::PowerManagementPolicy;
++
++class Memory :
++    sdbusplus::server::object_t<memoryInterface, powerManagementPolicy,
++                                operationalStatus, association>
++{
++  public:
++    Memory() = delete;
++    Memory(const Memory&) = delete;
++    Memory& operator=(const Memory&) = delete;
++    Memory(Memory&&) = delete;
++    Memory& operator=(Memory&&) = delete;
++    ~Memory() = default;
++
++    struct MemoryInfo
++    {
++        uint32_t memoryBandwidth;
++        uint8_t memoryType;
++        uint32_t powerConsumption;
++    } __attribute__((packed));
++
++    Memory(sdbusplus::bus_t& bus, const std::string& objPath,
++           MemoryInfo* deviceInfo,
++           const std::string& memoryChunksObjPath,
++           const std::string& memoryDomainObjPath) :
++        sdbusplus::server::object_t<memoryInterface, powerManagementPolicy,
++                                    operationalStatus, association>(
++            bus, objPath.c_str()),
++        objectPath(objPath),
++        memoryChunksObjectPath(memoryChunksObjPath),
++        memoryDomainObjectPath(memoryDomainObjPath), memoryInfo(deviceInfo)
++    {
++        memoryUpdate();
++    }
++
++    void memoryUpdate();
++    void dimmMedia(const uint8_t type);
++    void power(const uint32_t value);
++
++  private:
++    std::string objectPath;
++    std::string memoryChunksObjectPath;
++    std::string memoryDomainObjectPath;
++    MemoryInfo* memoryInfo;
++};
++
++const std::map<uint8_t, memoryTechType> memoryTechTypeTable = {
++    {0x0, memoryTechType::Unknown},  {0x1, memoryTechType::DRAM},
++    {0x2, memoryTechType::NVDIMM_N}, {0x3, memoryTechType::NVDIMM_F},
++    {0x4, memoryTechType::NVDIMM_P}, {0x5, memoryTechType::IntelOptane},
++    {0x6, memoryTechType::Cache}};
++
++} // namespace smbios
++
++} // namespace phosphor
+diff --git a/include/memoryChunks.hpp b/include/memoryChunks.hpp
+new file mode 100644
+index 0000000..ec659d6
+--- /dev/null
++++ b/include/memoryChunks.hpp
+@@ -0,0 +1,66 @@
++#pragma once
++#include "smbios_mdrv2.hpp"
++
++#include <xyz/openbmc_project/Association/Definitions/server.hpp>
++#include <xyz/openbmc_project/Inventory/Item/MemoryChunks/server.hpp>
++#include <xyz/openbmc_project/State/Decorator/OperationalStatus/server.hpp>
++
++namespace phosphor
++{
++
++namespace smbios
++{
++
++using memoryChunksInterface =
++    sdbusplus::server::xyz::openbmc_project::inventory::item::MemoryChunks;
++using operationalStatus = sdbusplus::xyz::openbmc_project::State::Decorator::
++    server::OperationalStatus;
++using association =
++    sdbusplus::server::xyz::openbmc_project::association::Definitions;
++using chunksLocation = sdbusplus::server::xyz::openbmc_project::inventory::
++    item::MemoryChunks::MediaLocations;
++
++class MemoryChunks :
++    sdbusplus::server::object_t<memoryChunksInterface, operationalStatus,
++                                association>
++{
++  public:
++    MemoryChunks() = delete;
++    MemoryChunks(const MemoryChunks&) = delete;
++    MemoryChunks& operator=(const MemoryChunks&) = delete;
++    MemoryChunks(MemoryChunks&&) = delete;
++    MemoryChunks& operator=(MemoryChunks&&) = delete;
++    ~MemoryChunks() = default;
++
++    struct MemoryChunksInfo
++    {
++        uint8_t location;
++    } __attribute__((packed));
++
++    MemoryChunks(sdbusplus::bus_t& bus, const std::string& objPath,
++                 MemoryChunksInfo* deviceInfo,
++                 const std::string& memoryDomainObjPath) :
++        sdbusplus::server::object_t<memoryChunksInterface, operationalStatus,
++                                    association>(bus, objPath.c_str()),
++        objectPath(objPath),
++        memoryDomainObjectPath(memoryDomainObjPath),
++        memoryChunksInfo(deviceInfo)
++    {
++        memoryChunksUpdate();
++    }
++
++    void memoryChunksUpdate();
++    void location(const uint8_t type);
++
++  private:
++    std::string objectPath;
++    std::string memoryDomainObjectPath;
++    MemoryChunksInfo* memoryChunksInfo;
++};
++
++const std::map<uint8_t, chunksLocation> memoryLocationTable = {
++    {0x1, chunksLocation::Local}, {0x2, chunksLocation::Remote}};
++
++} // namespace smbios
++
++} // namespace phosphor
+diff --git a/include/memoryDomain.hpp b/include/memoryDomain.hpp
+new file mode 100644
+index 0000000..3e855e2
+--- /dev/null
++++ b/include/memoryDomain.hpp
+@@ -0,0 +1,51 @@
++#pragma once
++#include "smbios_mdrv2.hpp"
++
++#include <xyz/openbmc_project/Association/Definitions/server.hpp>
++#include <xyz/openbmc_project/Inventory/Item/MemoryDomain/server.hpp>
++#include <xyz/openbmc_project/State/Decorator/OperationalStatus/server.hpp>
++
++namespace phosphor
++{
++
++namespace smbios
++{
++
++using memoryDomainInterface =
++    sdbusplus::server::xyz::openbmc_project::inventory::item::MemoryDomain;
++using operationalStatus = sdbusplus::xyz::openbmc_project::State::Decorator::
++    server::OperationalStatus;
++using association =
++    sdbusplus::server::xyz::openbmc_project::association::Definitions;
++
++class MemoryDomain :
++    sdbusplus::server::object_t<memoryDomainInterface, operationalStatus,
++                                association>
++{
++  public:
++    MemoryDomain() = delete;
++    MemoryDomain(const MemoryDomain&) = delete;
++    MemoryDomain& operator=(const MemoryDomain&) = delete;
++    MemoryDomain(MemoryDomain&&) = delete;
++    MemoryDomain& operator=(MemoryDomain&&) = delete;
++    ~MemoryDomain() = default;
++
++    MemoryDomain(sdbusplus::bus_t& bus, const std::string& objPath,
++                 const std::string& funcObjPath) :
++        sdbusplus::server::object_t<memoryDomainInterface, operationalStatus,
++                                    association>(bus, objPath.c_str()),
++        objectPath(objPath), funcObjectPath(funcObjPath)
++    {
++        memoryDomainUpdate();
++    }
++
++    void memoryDomainUpdate();
++
++  private:
++    std::string objectPath;
++    std::string funcObjectPath;
++};
++
++} // namespace smbios
++
++} // namespace phosphor
+diff --git a/include/pcieCxlFunction.hpp b/include/pcieCxlFunction.hpp
+new file mode 100644
+index 0000000..db94f7b
+--- /dev/null
++++ b/include/pcieCxlFunction.hpp
+@@ -0,0 +1,64 @@
++#pragma once
++#include "cxlLogicalDevice.hpp"
++#include "memory.hpp"
++#include "memoryChunks.hpp"
++#include "memoryDomain.hpp"
++#include "pcieFunction.hpp"
++#include "smbios_mdrv2.hpp"
++
++namespace phosphor
++{
++
++namespace smbios
++{
++
++using pcieFunction = phosphor::smbios::PcieFunction;
++using cxlLogicalDevice = phosphor::smbios::CxlLogicalDevice;
++using memoryDevice = phosphor::smbios::Memory;
++using memoryChunksDevice = phosphor::smbios::MemoryChunks;
++using memoryDomainDevice = phosphor::smbios::MemoryDomain;
++
++class PCIeCxlFunction
++{
++  public:
++    PCIeCxlFunction() = delete;
++    PCIeCxlFunction(const PCIeCxlFunction&) = delete;
++    PCIeCxlFunction& operator=(const PCIeCxlFunction&) = delete;
++    PCIeCxlFunction(PCIeCxlFunction&&) = delete;
++    PCIeCxlFunction& operator=(PCIeCxlFunction&&) = delete;
++    ~PCIeCxlFunction() = default;
++
++    struct PcieCxlFunc
++    {
++        pcieFunction::PcieFunctionInfo funcInfo;
++        cxlLogicalDevice::CxlLogicalDeviceInfo cxlLogicalDeviceInfo;
++        memoryDevice::MemoryInfo memoryDeviceInfo;
++        memoryChunksDevice::MemoryChunksInfo memoryChunksDeviceInfo;
++    } __attribute__((packed));
++
++    PCIeCxlFunction(sdbusplus::bus_t& bus, const uint8_t& funcIndex,
++                    uint8_t* smbiosTableStorage,
++                    const std::string& pcieDevice) :
++        bus(bus), funcIndex(funcIndex), pcieDeviceObjPath(pcieDevice)
++    {
++        updateDeviceFunc(smbiosTableStorage, pcieDeviceObjPath);
++    }
++
++    void updateDeviceFunc(uint8_t* smbiosTableStorage,
++                           const std::string& pcieDevice);
++
++  private:
++    sdbusplus::bus_t& bus;
++    uint8_t funcIndex;
++    uint16_t handle;
++    std::string pcieDeviceObjPath;
++    std::unique_ptr<pcieFunction> pcieFunc = nullptr;
++    std::unique_ptr<cxlLogicalDevice> cxlLogicalDev = nullptr;
++    std::unique_ptr<memoryDevice> memoryDev = nullptr;
++    std::unique_ptr<memoryChunksDevice> memoryChunksDev = nullptr;
++    std::unique_ptr<memoryDomainDevice> memoryDomainDev = nullptr;
++};
++
++} // namespace smbios
++
++} // namespace phosphor
+diff --git a/include/pciedevice.hpp b/include/pciedevice.hpp
+index c495752..bc5a751 100644
+--- a/include/pciedevice.hpp
++++ b/include/pciedevice.hpp
+@@ -3,6 +3,7 @@
+ 
+ #include <xyz/openbmc_project/Association/Definitions/server.hpp>
+ #include <xyz/openbmc_project/Inventory/Decorator/Asset/server.hpp>
++#include <xyz/openbmc_project/Inventory/Item/CXLDevice/server.hpp>
+ #include <xyz/openbmc_project/Inventory/Item/Ethernet/server.hpp>
+ #include <xyz/openbmc_project/Inventory/Item/PCIeDevice/server.hpp>
+ #include <xyz/openbmc_project/Inventory/Item/PCIeSlot/server.hpp>
+@@ -33,6 +34,8 @@ using storageDevice =
+     sdbusplus::server::xyz::openbmc_project::inventory::item::Storage;
+ using ethernetDevice =
+     sdbusplus::server::xyz::openbmc_project::inventory::item::Ethernet;
++using cxlDevice =
++    sdbusplus::server::xyz::openbmc_project::inventory::item::CXLDevice;
+ 
+ class PcieDevice :
+     sdbusplus::server::object_t<asset, pcieDevice, item, softwareVersion,
+@@ -55,6 +58,11 @@ class PcieDevice :
+         {
+             ethernetItf.reset();
+         }
++
++        if (cxlItf)
++        {
++            cxlItf.reset();
++        }
+     }
+ 
+     PcieDevice(sdbusplus::bus_t& bus, const std::string& objPath,
+@@ -101,6 +109,15 @@ class PcieDevice :
+         }
+     }
+ 
++    void addCxlInterface()
++    {
++        if (!cxlItf)
++        {
++            cxlItf = std::make_unique<sdbusplus::server::object_t<cxlDevice>>(
++                bus, objectPath.c_str());
++        }
++    }
++
+   private:
+     sdbusplus::bus_t& bus;
+     uint8_t pcieDeviceIndex;
+@@ -112,6 +129,7 @@ class PcieDevice :
+         nullptr;
+     std::unique_ptr<sdbusplus::server::object_t<ethernetDevice>> ethernetItf =
+         nullptr;
++    std::unique_ptr<sdbusplus::server::object_t<cxlDevice>> cxlItf = nullptr;
+ 
+     struct PCIeDeviceInfo
+     {
+diff --git a/include/smbios_mdrv2.hpp b/include/smbios_mdrv2.hpp
+index 49a0a84..9b3188a 100644
+--- a/include/smbios_mdrv2.hpp
++++ b/include/smbios_mdrv2.hpp
+@@ -212,6 +212,7 @@ typedef enum
+     tpmDeviceType = 43,
+     firmwareInventoryInformationType = 45,
+     pcieDeviceType = 128,
++    pcieCxlFunction = 129,
+     pcieStorageFunction = 130,
+     pcieNetworkFunction = 131,
+ } SmbiosType;
+diff --git a/src/cxlLogicalDevice.cpp b/src/cxlLogicalDevice.cpp
+new file mode 100644
+index 0000000..feb7d5e
+--- /dev/null
++++ b/src/cxlLogicalDevice.cpp
+@@ -0,0 +1,51 @@
++#include "cxlLogicalDevice.hpp"
++
++#include "smbios_mdrv2.hpp"
++
++namespace phosphor
++{
++namespace smbios
++{
++
++void CxlLogicalDevice::cxlUpdate()
++{
++    if (!cxlInfo)
++    {
++        return;
++    }
++
++    memoryCapacity(cxlInfo->memoryCapacity);
++    functional(true);
++
++    std::vector<std::tuple<std::string, std::string, std::string>> assocs;
++    if (!funcObjectPath.empty())
++    {
++        assocs.emplace_back("produced_by", "producing", funcObjectPath);
++    }
++
++    if (!pcieDeviceObjectPath.empty())
++    {
++        assocs.emplace_back("contained_by", "containing",
++                            pcieDeviceObjectPath);
++    }
++
++    if (!memoryChunksObjectPath.empty())
++    {
++        assocs.emplace_back("exporting", "exported_by",
++                            memoryChunksObjectPath);
++    }
++
++    if (!memoryDomainObjectPath.empty())
++    {
++        assocs.emplace_back("contained_by", "containing",
++                            memoryDomainObjectPath);
++    }
++
++    if (!assocs.empty())
++    {
++        association::associations(assocs);
++    }
++}
++
++} // namespace smbios
++} // namespace phosphor
+diff --git a/src/mdrv2.cpp b/src/mdrv2.cpp
+index a7a847f..a19bb15 100644
+--- a/src/mdrv2.cpp
++++ b/src/mdrv2.cpp
+@@ -716,6 +716,53 @@ void MDRV2::systemInfoUpdate()
+             pcieSlotObjPath, motherboardPath));
+     }
+ 
++    num = getTotalSmbiosEntries(pcieCxlFunction);
++    if (!num)
++    {
++        lg2::error("Get total pcie CXL function failed.");
++        return;
++    }
++
++    pcieCxlFuncs.clear();
++    for (unsigned int index = 0; index < *num; index++)
++    {
++        std::string pcieDevicePath;
++        uint8_t* pcieDevicePtr = getTableData(
++            smbiosDir.dir[smbiosDirIndex].dataStorage, pcieCxlFunction, index);
++
++        if (pcieDevicePtr)
++        {
++            // The format of PCIe CXL function SMBIOS table is:
++            //  - Type: 1 byte
++            //  - length: 1 byte
++            //  - handle: 2 bytes
++            //  - Associate Hanlde: 2 bytes
++            //  ...
++            uint16_t associateHandle =
++                *(reinterpret_cast<uint16_t*>(pcieDevicePtr + 4));
++
++            for (auto it = pcieDevices.begin(); it != pcieDevices.end(); it++)
++            {
++                if ((*it)->getHandle() == associateHandle)
++                {
++                    pcieDevicePath = (*it)->getObjectPath();
++                    (*it)->addCxlInterface();
++                    break;
++                }
++            }
++        }
++
++        if (pcieDevicePath.empty())
++        {
++            continue;
++        }
++
++        pcieCxlFuncs.emplace_back(
++            std::make_unique<phosphor::smbios::PCIeCxlFunction>(
++                *bus, index, smbiosDir.dir[smbiosDirIndex].dataStorage,
++                pcieDevicePath));
++    }
++
+     num = getTotalSmbiosEntries(pcieStorageFunction);
+     if (!num)
+     {
+diff --git a/src/memory.cpp b/src/memory.cpp
+new file mode 100644
+index 0000000..4dca55b
+--- /dev/null
++++ b/src/memory.cpp
+@@ -0,0 +1,59 @@
++#include "memory.hpp"
++
++#include "smbios_mdrv2.hpp"
++
++namespace phosphor
++{
++namespace smbios
++{
++
++void Memory::memoryUpdate()
++{
++    if (!memoryInfo)
++    {
++        return;
++    }
++
++    dimmMedia(memoryInfo->memoryType);
++    power(memoryInfo->powerConsumption);
++    functional(true);
++
++    std::vector<std::tuple<std::string, std::string, std::string>> assocs;
++
++    if (!memoryChunksObjectPath.empty())
++    {
++        assocs.emplace_back("contained_by", "containing",
++                            memoryChunksObjectPath);
++    }
++
++    if (!memoryDomainObjectPath.empty())
++    {
++        assocs.emplace_back("contained_by", "containing",
++                            memoryDomainObjectPath);
++    }
++
++    if (!assocs.empty())
++    {
++        association::associations(assocs);
++    }
++}
++
++void Memory::dimmMedia(const uint8_t type)
++{
++    memoryInterface::memoryMedia(memoryTechType::Unknown);
++
++    std::map<uint8_t, memoryTechType>::const_iterator it =
++        memoryTechTypeTable.find(type);
++    if (it != memoryTechTypeTable.end())
++    {
++        memoryInterface::memoryMedia(it->second);
++    }
++}
++
++void Memory::power(const uint32_t value)
++{
++    powerManagementPolicy::maxTDPmW(value);
++}
++
++} // namespace smbios
++} // namespace phosphor
+diff --git a/src/memoryChunks.cpp b/src/memoryChunks.cpp
+new file mode 100644
+index 0000000..1d8426e
+--- /dev/null
++++ b/src/memoryChunks.cpp
+@@ -0,0 +1,41 @@
++#include "memoryChunks.hpp"
++
++#include "smbios_mdrv2.hpp"
++
++namespace phosphor
++{
++namespace smbios
++{
++
++void MemoryChunks::memoryChunksUpdate()
++{
++    if (!memoryChunksInfo)
++    {
++        return;
++    }
++
++    location(memoryChunksInfo->location);
++    functional(true);
++
++    if (!memoryDomainObjectPath.empty())
++    {
++        association::associations({{"contained_by", "containing",
++                            memoryDomainObjectPath}});
++    }
++}
++
++void MemoryChunks::location(const uint8_t type)
++{
++    // Set Location to Local as default
++    memoryChunksInterface::mediaLocation(chunksLocation::Local);
++
++    std::map<uint8_t, chunksLocation>::const_iterator it =
++        memoryLocationTable.find(type);
++    if (it != memoryLocationTable.end())
++    {
++        memoryChunksInterface::mediaLocation(it->second);
++    }
++}
++
++} // namespace smbios
++} // namespace phosphor
+diff --git a/src/memoryDomain.cpp b/src/memoryDomain.cpp
+new file mode 100644
+index 0000000..d8086c5
+--- /dev/null
++++ b/src/memoryDomain.cpp
+@@ -0,0 +1,22 @@
++#include "memoryDomain.hpp"
++
++#include "smbios_mdrv2.hpp"
++
++namespace phosphor
++{
++namespace smbios
++{
++
++void MemoryDomain::memoryDomainUpdate()
++{
++    functional(true);
++
++    if (!funcObjectPath.empty())
++    {
++        association::associations(
++            {{"produced_by", "producing", funcObjectPath}});
++    }
++}
++
++} // namespace smbios
++} // namespace phosphor
+diff --git a/src/meson.build b/src/meson.build
+index f17985a..b822cdc 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -51,6 +51,11 @@ executable(
+     'drive.cpp',
+     'pcieNetworkFunction.cpp',
+     'network.cpp',
++    'pcieCxlFunction.cpp',
++    'cxlLogicalDevice.cpp',
++    'memory.cpp',
++    'memoryChunks.cpp',
++    'memoryDomain.cpp',
+     cpp_args: cpp_args_smbios,
+     dependencies: [
+         boost_dep,
+diff --git a/src/pcieCxlFunction.cpp b/src/pcieCxlFunction.cpp
+new file mode 100644
+index 0000000..97cb7b3
+--- /dev/null
++++ b/src/pcieCxlFunction.cpp
+@@ -0,0 +1,65 @@
++#include "pcieCxlFunction.hpp"
++
++#include "smbios_mdrv2.hpp"
++
++namespace phosphor
++{
++
++namespace smbios
++{
++
++void PCIeCxlFunction::updateDeviceFunc(uint8_t* smbiosTableStorage,
++                                        const std::string& pcieDevice)
++{
++    pcieDeviceObjPath = pcieDevice;
++    uint8_t* dataIn =
++        getTableData(smbiosTableStorage, pcieCxlFunction, funcIndex);
++
++    if (!dataIn)
++    {
++        return;
++    }
++
++    auto pcieDeviceInfo = reinterpret_cast<struct PcieCxlFunc*>(dataIn);
++    auto pcieFuncInfo =
++        reinterpret_cast<struct pcieFunction::PcieFunctionInfo*>(
++            &(pcieDeviceInfo->funcInfo));
++    auto cxlLogicalDeviceInfo =
++        reinterpret_cast<struct cxlLogicalDevice::CxlLogicalDeviceInfo*>(
++            &(pcieDeviceInfo->cxlLogicalDeviceInfo));
++    auto memoryDeviceInfo = reinterpret_cast<struct memoryDevice::MemoryInfo*>(
++        &(pcieDeviceInfo->memoryDeviceInfo));
++    auto memoryChunksDeviceInfo =
++        reinterpret_cast<struct memoryChunksDevice::MemoryChunksInfo*>(
++            &(pcieDeviceInfo->memoryChunksDeviceInfo));
++
++    std::string funcPath =
++        pcieDeviceObjPath + "/Function" +
++        std::to_string(pcieDeviceInfo->funcInfo.functionNumber);
++    std::string cxlLogicalDevicePath =
++        funcPath + "/CXLLogicalDevice" + std::to_string(funcIndex);
++    std::string memorylDevicePath =
++        funcPath + "/Memory" + std::to_string(funcIndex);
++    std::string memoryChunkslDevicePath =
++        funcPath + "/MemoryChunk" + std::to_string(funcIndex);
++    std::string memoryDomainDevicePath =
++        funcPath + "/MemoryDomain" + std::to_string(funcIndex);
++
++    pcieFunc = std::make_unique<pcieFunction>(bus, funcPath, pcieFuncInfo,
++                                              pcieDeviceObjPath);
++    cxlLogicalDev = std::make_unique<cxlLogicalDevice>(
++        bus, cxlLogicalDevicePath, cxlLogicalDeviceInfo, funcPath,
++        pcieDeviceObjPath, memoryChunkslDevicePath, memoryDomainDevicePath);
++    memoryDev = std::make_unique<memoryDevice>(
++        bus, memorylDevicePath, memoryDeviceInfo, memoryChunkslDevicePath,
++        memoryDomainDevicePath);
++    memoryChunksDev = std::make_unique<memoryChunksDevice>(
++        bus, memoryChunkslDevicePath, memoryChunksDeviceInfo,
++        memoryDomainDevicePath);
++    memoryDomainDev = std::make_unique<memoryDomainDevice>(
++        bus, memoryDomainDevicePath, funcPath);
++}
++
++} // namespace smbios
++
++} // namespace phosphor
