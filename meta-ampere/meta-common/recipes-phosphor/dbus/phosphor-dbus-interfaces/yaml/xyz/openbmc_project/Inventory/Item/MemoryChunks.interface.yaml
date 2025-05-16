@@ -1,0 +1,24 @@
+description: >
+    This defines a Memory chunk to be exposed for system management. It
+    includes the Memory chunk properties.
+
+properties:
+    - name: MediaLocation
+      type: enum[self.MediaLocations]
+      description: >
+          Indicates the location of the memory media for this memory chunk.
+
+enumerations:
+    - name: MediaLocations
+      description: >
+          Possible Media Location
+      values:
+          - name: "Local"
+            description: >
+                The memory chunk was created using local media.
+          - name: "Mixed"
+            description: >
+                The memory chunk was created using both local media and remote media accessible through a fabric.
+          - name: "Remote"
+            description: >
+                The memory chunk was created using remote media accessible through a fabric.

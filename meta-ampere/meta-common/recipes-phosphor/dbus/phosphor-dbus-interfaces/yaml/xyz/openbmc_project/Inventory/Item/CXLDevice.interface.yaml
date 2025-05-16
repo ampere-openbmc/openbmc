@@ -1,0 +1,4 @@
+description: >
+    This defines a CXL device to be exposed for system management. It
+    includes the CXL device properties.
+

@@ -1,0 +1,19 @@
+description: >
+    This defines a CXL logical Device to be exposed for system management. It
+    includes the CXL logical device properties.
+
+properties:
+    - name: MemoryCapacity
+      type: uint64
+      description: >
+          Indicates the memory capacity available in this CXL logical device.
+
+associations:
+    - name: described_by
+      description: >
+          Objects that implement CXL logical device can optionally implement the
+          embedded_by association to provide a link back to a PCIe Function.
+      reverse_names:
+          - describeing
+      required_endpoint_interfaces:
+          - xyz.openbmc_project.Inventory.Item.PCIeFunction
