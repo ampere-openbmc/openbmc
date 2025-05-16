@@ -1,0 +1,571 @@
+From 65741f3deab7cdd1e5298a1d8f171d5bc9601b8a Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Sat, 24 May 2025 08:17:13 +0000
+Subject: [PATCH 2/2] Expose the SMBIOS Type 130 Storage Device Function
+ information
+
+This expose the SMBIOS type 130 Storage Device Function information to dbus.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ include/drive.hpp               | 69 ++++++++++++++++++++++++++++++
+ include/mdrv2.hpp               |  2 +
+ include/pcieFunction.hpp        | 75 +++++++++++++++++++++++++++++++++
+ include/pcieStorageFunction.hpp | 53 +++++++++++++++++++++++
+ include/pciedevice.hpp          | 23 +++++++++-
+ include/smbios_mdrv2.hpp        |  1 +
+ src/drive.cpp                   | 53 +++++++++++++++++++++++
+ src/mdrv2.cpp                   | 49 +++++++++++++++++++++
+ src/meson.build                 |  3 ++
+ src/pcieFunction.cpp            | 34 +++++++++++++++
+ src/pcieStorageFunction.cpp     | 43 +++++++++++++++++++
+ 11 files changed, 404 insertions(+), 1 deletion(-)
+ create mode 100644 include/drive.hpp
+ create mode 100644 include/pcieFunction.hpp
+ create mode 100644 include/pcieStorageFunction.hpp
+ create mode 100644 src/drive.cpp
+ create mode 100644 src/pcieFunction.cpp
+ create mode 100644 src/pcieStorageFunction.cpp
+
+diff --git a/include/drive.hpp b/include/drive.hpp
+new file mode 100644
+index 0000000..c349cb3
+--- /dev/null
++++ b/include/drive.hpp
+@@ -0,0 +1,69 @@
++#pragma once
++#include "smbios_mdrv2.hpp"
++
++#include <xyz/openbmc_project/Association/Definitions/server.hpp>
++#include <xyz/openbmc_project/Inventory/Item/Drive/server.hpp>
++#include <xyz/openbmc_project/State/Decorator/OperationalStatus/server.hpp>
++
++namespace phosphor
++{
++
++namespace smbios
++{
++
++using driveInterface =
++    sdbusplus::server::xyz::openbmc_project::inventory::item::Drive;
++using operationalStatus = sdbusplus::xyz::openbmc_project::State::Decorator::
++    server::OperationalStatus;
++using association =
++    sdbusplus::server::xyz::openbmc_project::association::Definitions;
++using driveType =
++    sdbusplus::server::xyz::openbmc_project::inventory::item::Drive::DriveType;
++
++class DriveDevice :
++    sdbusplus::server::object_t<driveInterface, operationalStatus, association>
++{
++  public:
++    DriveDevice() = delete;
++    DriveDevice(const DriveDevice&) = delete;
++    DriveDevice& operator=(const DriveDevice&) = delete;
++    DriveDevice(DriveDevice&&) = delete;
++    DriveDevice& operator=(DriveDevice&&) = delete;
++    ~DriveDevice() = default;
++
++    struct DriveDeviceInfo
++    {
++        uint8_t mediaType;
++        uint64_t storageCapacity;
++    } __attribute__((packed));
++
++    DriveDevice(sdbusplus::bus_t& bus, const std::string& objPath,
++                DriveDeviceInfo* deviceInfo, const std::string& funcObjPath,
++                const std::string& pcieDeviceObjPath) :
++        sdbusplus::server::object_t<driveInterface, operationalStatus,
++                                    association>(bus, objPath.c_str()),
++        objectPath(objPath), funcObjectPath(funcObjPath),
++        pcieDeviceObjectPath(pcieDeviceObjPath), driveInfo(deviceInfo)
++    {
++        driveUpdate();
++    }
++
++    void driveUpdate();
++    void mediaType(const uint8_t type);
++
++  private:
++    std::string objectPath;
++    std::string funcObjectPath;
++    std::string pcieDeviceObjectPath;
++    DriveDeviceInfo* driveInfo;
++};
++
++const std::map<uint8_t, driveType> driveMediaTypeTable = {
++    {0x00, driveType::Unknown},
++    {0x01, driveType::HDD},
++    {0x02, driveType::SMR},
++    {0x03, driveType::SSD}};
++
++} // namespace smbios
++
++} // namespace phosphor
+diff --git a/include/mdrv2.hpp b/include/mdrv2.hpp
+index 0a6ebfe..ac05623 100644
+--- a/include/mdrv2.hpp
++++ b/include/mdrv2.hpp
+@@ -18,6 +18,7 @@
+ #include "cpu.hpp"
+ #include "dimm.hpp"
+ #include "firmware_inventory.hpp"
++#include "pcieStorageFunction.hpp"
+ #include "pciedevice.hpp"
+ #include "pcieslot.hpp"
+ #include "smbios_mdrv2.hpp"
+@@ -195,6 +196,7 @@ class MDRV2 :
+     std::vector<std::unique_ptr<Dimm>> dimms;
+     std::vector<std::unique_ptr<Pcie>> pcies;
+     std::vector<std::unique_ptr<PcieDevice>> pcieDevices;
++    std::vector<std::unique_ptr<PCIeStorageFunction>> pcieStorageFuncs;
+     std::vector<std::unique_ptr<Tpm>> tpms;
+     std::vector<std::unique_ptr<FirmwareInventory>> firmwareCollection;
+     std::unique_ptr<System> system;
+diff --git a/include/pcieFunction.hpp b/include/pcieFunction.hpp
+new file mode 100644
+index 0000000..8428f1d
+--- /dev/null
++++ b/include/pcieFunction.hpp
+@@ -0,0 +1,75 @@
++#pragma once
++#include "smbios_mdrv2.hpp"
++
++#include <xyz/openbmc_project/Association/Definitions/server.hpp>
++#include <xyz/openbmc_project/Inventory/Item/PCIeFunction/server.hpp>
++#include <xyz/openbmc_project/Inventory/Item/server.hpp>
++
++namespace phosphor
++{
++
++namespace smbios
++{
++
++using pcieFunctionInterface =
++    sdbusplus::server::xyz::openbmc_project::inventory::item::PCIeFunction;
++using association =
++    sdbusplus::server::xyz::openbmc_project::association::Definitions;
++using item = sdbusplus::server::xyz::openbmc_project::inventory::Item;
++
++class PcieFunction :
++    sdbusplus::server::object_t<pcieFunctionInterface, item, association>
++{
++  public:
++    PcieFunction() = delete;
++    PcieFunction(const PcieFunction&) = delete;
++    PcieFunction& operator=(const PcieFunction&) = delete;
++    PcieFunction(PcieFunction&&) = delete;
++    PcieFunction& operator=(PcieFunction&&) = delete;
++    ~PcieFunction() = default;
++
++    struct PcieFunctionInfo
++    {
++        uint8_t type;
++        uint8_t length;
++        uint16_t handle;
++        uint16_t pcieDeviceHandle;
++        uint8_t functionNumber;
++        uint8_t revisionId;
++        uint16_t vendorId;
++        uint16_t deviceId;
++        uint16_t subSystemVendorId;
++        uint16_t subSystemDeviceId;
++        uint8_t baseClassCode;
++        uint8_t subClassCode;
++        uint8_t programmingInterface;
++    } __attribute__((packed));
++
++    PcieFunction(sdbusplus::bus_t& bus, const std::string& objPath,
++                 PcieFunctionInfo* functionInfo,
++                 const std::string& pcieDevice) :
++        sdbusplus::server::object_t<pcieFunctionInterface, item, association>(
++            bus, objPath.c_str()),
++        bus(bus), functionInfo(functionInfo), objectPath(objPath),
++        pcieDeviceObjPath(pcieDevice)
++    {
++        pcieFunctionInfoUpdate();
++    }
++
++    void pcieFunctionInfoUpdate();
++
++    std::string getObjectPath()
++    {
++        return objectPath;
++    }
++
++  private:
++    sdbusplus::bus_t& bus;
++    PcieFunctionInfo* functionInfo;
++    std::string objectPath;
++    std::string pcieDeviceObjPath;
++};
++
++} // namespace smbios
++
++} // namespace phosphor
+diff --git a/include/pcieStorageFunction.hpp b/include/pcieStorageFunction.hpp
+new file mode 100644
+index 0000000..e433fa6
+--- /dev/null
++++ b/include/pcieStorageFunction.hpp
+@@ -0,0 +1,53 @@
++#pragma once
++#include "drive.hpp"
++#include "pcieFunction.hpp"
++#include "smbios_mdrv2.hpp"
++
++namespace phosphor
++{
++
++namespace smbios
++{
++
++using pcieFunction = phosphor::smbios::PcieFunction;
++using driveDevice = phosphor::smbios::DriveDevice;
++
++class PCIeStorageFunction
++{
++  public:
++    PCIeStorageFunction() = delete;
++    PCIeStorageFunction(const PCIeStorageFunction&) = delete;
++    PCIeStorageFunction& operator=(const PCIeStorageFunction&) = delete;
++    PCIeStorageFunction(PCIeStorageFunction&&) = delete;
++    PCIeStorageFunction& operator=(PCIeStorageFunction&&) = delete;
++    ~PCIeStorageFunction() = default;
++
++    struct PcieStorageFunc
++    {
++        pcieFunction::PcieFunctionInfo funcInfo;
++        driveDevice::DriveDeviceInfo driveInfo;
++    } __attribute__((packed));
++
++    PCIeStorageFunction(sdbusplus::bus_t& bus, const uint8_t& funcIndex,
++                        uint8_t* smbiosTableStorage,
++                        const std::string& pcieDevice) :
++        bus(bus), funcIndex(funcIndex), pcieDeviceObjPath(pcieDevice)
++    {
++        updateDeviceFunc(smbiosTableStorage, pcieDeviceObjPath);
++    }
++
++    void updateDeviceFunc(uint8_t* smbiosTableStorage,
++                               const std::string& pcieDevice);
++
++  private:
++    sdbusplus::bus_t& bus;
++    uint8_t funcIndex;
++    uint16_t handle;
++    std::string pcieDeviceObjPath;
++    std::unique_ptr<pcieFunction> pcieFunc = nullptr;
++    std::unique_ptr<driveDevice> driveDev = nullptr;
++};
++
++} // namespace smbios
++
++} // namespace phosphor
+diff --git a/include/pciedevice.hpp b/include/pciedevice.hpp
+index e493349..7ea65ed 100644
+--- a/include/pciedevice.hpp
++++ b/include/pciedevice.hpp
+@@ -5,6 +5,7 @@
+ #include <xyz/openbmc_project/Inventory/Decorator/Asset/server.hpp>
+ #include <xyz/openbmc_project/Inventory/Item/PCIeDevice/server.hpp>
+ #include <xyz/openbmc_project/Inventory/Item/PCIeSlot/server.hpp>
++#include <xyz/openbmc_project/Inventory/Item/Storage/server.hpp>
+ #include <xyz/openbmc_project/Inventory/Item/server.hpp>
+ #include <xyz/openbmc_project/Software/Version/server.hpp>
+ 
+@@ -27,6 +28,8 @@ using mediaType = sdbusplus::server::xyz::openbmc_project::inventory::item::
+ using item = sdbusplus::server::xyz::openbmc_project::inventory::Item;
+ using softwareVersion =
+     sdbusplus::server::xyz::openbmc_project::software::Version;
++using storageDevice =
++    sdbusplus::server::xyz::openbmc_project::inventory::item::Storage;
+ 
+ class PcieDevice :
+     sdbusplus::server::object_t<asset, pcieDevice, item, softwareVersion,
+@@ -38,7 +41,13 @@ class PcieDevice :
+     PcieDevice& operator=(const PcieDevice&) = delete;
+     PcieDevice(PcieDevice&&) = delete;
+     PcieDevice& operator=(PcieDevice&&) = delete;
+-    ~PcieDevice() {}
++    ~PcieDevice()
++    {
++        if (storageItf)
++        {
++            storageItf.reset();
++        }
++    }
+ 
+     PcieDevice(sdbusplus::bus_t& bus, const std::string& objPath,
+                const uint8_t& PcieDeviceId, uint8_t* smbiosTableStorage,
+@@ -64,12 +73,24 @@ class PcieDevice :
+         return objectPath;
+     }
+ 
++    void addStorageInterface()
++    {
++        if (!storageItf)
++        {
++            storageItf =
++                std::make_unique<sdbusplus::server::object_t<storageDevice>>(
++                    bus, objectPath.c_str());
++        }
++    }
++
+   private:
+     sdbusplus::bus_t& bus;
+     uint8_t pcieDeviceIndex;
+     std::string pcieSlotObjPath;
+     std::string objectPath;
+     uint16_t handle = 0;
++    std::unique_ptr<sdbusplus::server::object_t<storageDevice>> storageItf =
++        nullptr;
+ 
+     struct PCIeDeviceInfo
+     {
+diff --git a/include/smbios_mdrv2.hpp b/include/smbios_mdrv2.hpp
+index 88febfb..0d2c899 100644
+--- a/include/smbios_mdrv2.hpp
++++ b/include/smbios_mdrv2.hpp
+@@ -209,6 +209,7 @@ typedef enum
+     tpmDeviceType = 43,
+     firmwareInventoryInformationType = 45,
+     pcieDeviceType = 128,
++    pcieStorageFunction = 130,
+ } SmbiosType;
+ 
+ static constexpr uint8_t separateLen = 2;
+diff --git a/src/drive.cpp b/src/drive.cpp
+new file mode 100644
+index 0000000..e26f9de
+--- /dev/null
++++ b/src/drive.cpp
+@@ -0,0 +1,53 @@
++#include <cmath>
++#include "drive.hpp"
++
++#include "smbios_mdrv2.hpp"
++
++namespace phosphor
++{
++namespace smbios
++{
++
++void DriveDevice::driveUpdate()
++{
++    if (!driveInfo)
++    {
++        return;
++    }
++
++    mediaType(driveInfo->mediaType);
++    capacity(driveInfo->storageCapacity * std::pow(1024, 3)); // in Bytes
++    functional(true);
++
++    std::vector<std::tuple<std::string, std::string, std::string>> assocs;
++    if (!funcObjectPath.empty())
++    {
++        assocs.emplace_back("described_by", "describeing", funcObjectPath);
++    }
++
++    if (!pcieDeviceObjectPath.empty())
++    {
++        assocs.emplace_back("stored_by", "provides_storage",
++                            pcieDeviceObjectPath);
++    }
++
++    if (!assocs.empty())
++    {
++        association::associations(assocs);
++    }
++}
++
++void DriveDevice::mediaType(const uint8_t type)
++{
++    driveInterface::type(driveType::Unknown);
++
++    std::map<uint8_t, driveType>::const_iterator it =
++        driveMediaTypeTable.find(type);
++    if (it != driveMediaTypeTable.end())
++    {
++        driveInterface::type(it->second);
++    }
++}
++
++} // namespace smbios
++} // namespace phosphor
+diff --git a/src/mdrv2.cpp b/src/mdrv2.cpp
+index 65dd1b2..d81222f 100644
+--- a/src/mdrv2.cpp
++++ b/src/mdrv2.cpp
+@@ -16,6 +16,7 @@
+ 
+ #include "mdrv2.hpp"
+ 
++#include "pcieStorageFunction.hpp"
+ #include "pciedevice.hpp"
+ #include "pcieslot.hpp"
+ 
+@@ -715,6 +716,54 @@ void MDRV2::systemInfoUpdate()
+             pcieSlotObjPath));
+     }
+ 
++    num = getTotalSmbiosEntries(pcieStorageFunction);
++    if (!num)
++    {
++        lg2::error("Get total pcie storage function failed.");
++        return;
++    }
++
++    pcieStorageFuncs.clear();
++    for (unsigned int index = 0; index < *num; index++)
++    {
++        std::string pcieDevicePath;
++        uint8_t* pcieDevicePtr =
++            getTableData(smbiosDir.dir[smbiosDirIndex].dataStorage,
++                         pcieStorageFunction, index);
++
++        if (pcieDevicePtr)
++        {
++            // The format of PCIe Storage function SMBIOS table is:
++            //  - Type: 1 byte
++            //  - length: 1 byte
++            //  - handle: 2 bytes
++            //  - Associate Hanlde: 2 bytes
++            //  ...
++            uint16_t associateHandle =
++                *(reinterpret_cast<uint16_t*>(pcieDevicePtr + 4));
++
++            for (auto it = pcieDevices.begin(); it != pcieDevices.end(); it++)
++            {
++                if ((*it)->getHandle() == associateHandle)
++                {
++                    pcieDevicePath = (*it)->getObjectPath();
++                    (*it)->addStorageInterface();
++                    break;
++                }
++            }
++        }
++
++        if (pcieDevicePath.empty())
++        {
++            continue;
++        }
++
++        pcieStorageFuncs.emplace_back(
++            std::make_unique<phosphor::smbios::PCIeStorageFunction>(
++                *bus, index, smbiosDir.dir[smbiosDirIndex].dataStorage,
++                pcieDevicePath));
++    }
++
+ #endif
+ 
+     system.reset();
+diff --git a/src/meson.build b/src/meson.build
+index 1ecbbc1..4b987ae 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -46,6 +46,9 @@ executable(
+     'tpm.cpp',
+     'firmware_inventory.cpp',
+     'pciedevice.cpp',
++    'pcieFunction.cpp',
++    'pcieStorageFunction.cpp',
++    'drive.cpp',
+     cpp_args: cpp_args_smbios,
+     dependencies: [
+         boost_dep,
+diff --git a/src/pcieFunction.cpp b/src/pcieFunction.cpp
+new file mode 100644
+index 0000000..7994e82
+--- /dev/null
++++ b/src/pcieFunction.cpp
+@@ -0,0 +1,34 @@
++#include "pcieFunction.hpp"
++
++#include "smbios_mdrv2.hpp"
++
++namespace phosphor
++{
++namespace smbios
++{
++
++void PcieFunction::pcieFunctionInfoUpdate()
++{
++    if (!functionInfo)
++    {
++        return;
++    }
++
++    revisionId(functionInfo->revisionId);
++    vendorId(functionInfo->vendorId);
++    deviceId(functionInfo->deviceId);
++    subsystemVendorId(functionInfo->subSystemVendorId);
++    subsystemId(functionInfo->subSystemDeviceId);
++    baseClassCode(functionInfo->baseClassCode);
++    subClassCode(functionInfo->subClassCode);
++    programmingInterface(functionInfo->programmingInterface);
++
++    if (!pcieDeviceObjPath.empty())
++    {
++        association::associations(
++            {{"embedded_by", "embedeing", pcieDeviceObjPath}});
++    }
++}
++
++} // namespace smbios
++} // namespace phosphor
+diff --git a/src/pcieStorageFunction.cpp b/src/pcieStorageFunction.cpp
+new file mode 100644
+index 0000000..0481a6f
+--- /dev/null
++++ b/src/pcieStorageFunction.cpp
+@@ -0,0 +1,43 @@
++#include "pcieStorageFunction.hpp"
++
++#include "smbios_mdrv2.hpp"
++
++namespace phosphor
++{
++
++namespace smbios
++{
++
++void PCIeStorageFunction::updateDeviceFunc(uint8_t* smbiosTableStorage,
++                                                const std::string& pcieDevice)
++{
++    pcieDeviceObjPath = pcieDevice;
++    uint8_t* dataIn =
++        getTableData(smbiosTableStorage, pcieStorageFunction, funcIndex);
++
++    if (!dataIn)
++    {
++        return;
++    }
++
++    auto pcieDeviceInfo = reinterpret_cast<struct PcieStorageFunc*>(dataIn);
++    auto pcieFuncInfo =
++        reinterpret_cast<struct pcieFunction::PcieFunctionInfo*>(
++            &(pcieDeviceInfo->funcInfo));
++    auto driveInfo = reinterpret_cast<struct driveDevice::DriveDeviceInfo*>(
++        &(pcieDeviceInfo->driveInfo));
++
++    std::string funcPath =
++        pcieDeviceObjPath + "/Function" +
++        std::to_string(pcieDeviceInfo->funcInfo.functionNumber);
++    std::string drivePath = funcPath + "/Drive" + std::to_string(funcIndex);
++
++    pcieFunc = std::make_unique<pcieFunction>(bus, funcPath, pcieFuncInfo,
++                                              pcieDeviceObjPath);
++    driveDev = std::make_unique<driveDevice>(bus, drivePath, driveInfo,
++                                             funcPath, pcieDeviceObjPath);
++}
++
++} // namespace smbios
++
++} // namespace phosphor
+-- 
+2.43.0
+

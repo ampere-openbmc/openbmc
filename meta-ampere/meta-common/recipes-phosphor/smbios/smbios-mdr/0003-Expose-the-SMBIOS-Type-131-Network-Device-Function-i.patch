@@ -1,0 +1,424 @@
+From 01e7e08036f3744cd4c88ad6e96d93e49ffa361e Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Sat, 24 May 2025 12:11:00 +0000
+Subject: [PATCH 3/4] Expose the SMBIOS Type 131 Network Device Function
+ information
+
+This expose the SMBIOS type 131 Network Device Function information to dbus.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ include/mdrv2.hpp               |  2 ++
+ include/network.hpp             | 63 +++++++++++++++++++++++++++++++++
+ include/pcieNetworkFunction.hpp | 55 ++++++++++++++++++++++++++++
+ include/pciedevice.hpp          | 20 +++++++++++
+ include/smbios_mdrv2.hpp        |  1 +
+ src/mdrv2.cpp                   | 48 +++++++++++++++++++++++++
+ src/meson.build                 |  2 ++
+ src/network.cpp                 | 38 ++++++++++++++++++++
+ src/pcieNetworkFunction.cpp     | 54 ++++++++++++++++++++++++++++
+ 9 files changed, 283 insertions(+)
+ create mode 100644 include/network.hpp
+ create mode 100644 include/pcieNetworkFunction.hpp
+ create mode 100644 src/network.cpp
+ create mode 100644 src/pcieNetworkFunction.cpp
+
+diff --git a/include/mdrv2.hpp b/include/mdrv2.hpp
+index ac05623..52004c9 100644
+--- a/include/mdrv2.hpp
++++ b/include/mdrv2.hpp
+@@ -18,6 +18,7 @@
+ #include "cpu.hpp"
+ #include "dimm.hpp"
+ #include "firmware_inventory.hpp"
++#include "pcieNetworkFunction.hpp"
+ #include "pcieStorageFunction.hpp"
+ #include "pciedevice.hpp"
+ #include "pcieslot.hpp"
+@@ -197,6 +198,7 @@ class MDRV2 :
+     std::vector<std::unique_ptr<Pcie>> pcies;
+     std::vector<std::unique_ptr<PcieDevice>> pcieDevices;
+     std::vector<std::unique_ptr<PCIeStorageFunction>> pcieStorageFuncs;
++    std::vector<std::unique_ptr<PCIeNetworkFunction>> pcieNetworkFuncs;
+     std::vector<std::unique_ptr<Tpm>> tpms;
+     std::vector<std::unique_ptr<FirmwareInventory>> firmwareCollection;
+     std::unique_ptr<System> system;
+diff --git a/include/network.hpp b/include/network.hpp
+new file mode 100644
+index 0000000..8459c7b
+--- /dev/null
++++ b/include/network.hpp
+@@ -0,0 +1,63 @@
++#pragma once
++#include "smbios_mdrv2.hpp"
++
++#include <xyz/openbmc_project/Association/Definitions/server.hpp>
++#include <xyz/openbmc_project/Inventory/Item/NetworkInterface/server.hpp>
++#include <xyz/openbmc_project/State/Decorator/OperationalStatus/server.hpp>
++
++namespace phosphor
++{
++
++namespace smbios
++{
++
++using networkInterface =
++    sdbusplus::server::xyz::openbmc_project::inventory::item::NetworkInterface;
++using operationalStatus = sdbusplus::xyz::openbmc_project::State::Decorator::
++    server::OperationalStatus;
++using association =
++    sdbusplus::server::xyz::openbmc_project::association::Definitions;
++
++class NetworkDevice :
++    sdbusplus::server::object_t<networkInterface, operationalStatus,
++                                association>
++{
++  public:
++    NetworkDevice() = delete;
++    NetworkDevice(const NetworkDevice&) = delete;
++    NetworkDevice& operator=(const NetworkDevice&) = delete;
++    NetworkDevice(NetworkDevice&&) = delete;
++    NetworkDevice& operator=(NetworkDevice&&) = delete;
++    ~NetworkDevice() = default;
++
++    struct NetworkDeviceInfo
++    {
++        uint8_t macAddress;
++    } __attribute__((packed));
++
++    NetworkDevice(sdbusplus::bus_t& bus, const std::string& objPath,
++                  NetworkDeviceInfo* deviceInfo, const std::string& funcObjPath,
++                  const std::string& pcieDeviceObjPath,
++                  const std::string& macAddress) :
++        sdbusplus::server::object_t<networkInterface, operationalStatus,
++                                    association>(bus, objPath.c_str()),
++        objectPath(objPath), funcObjectPath(funcObjPath),
++        pcieDeviceObjectPath(pcieDeviceObjPath), networkInfo(deviceInfo)
++    {
++        networkUpdate(macAddress);
++    }
++
++    void networkUpdate(const std::string& macAddress);
++    void macAddress(const uint8_t positionNum, const uint8_t structLen,
++                    uint8_t* dataIn);
++
++  private:
++    std::string objectPath;
++    std::string funcObjectPath;
++    std::string pcieDeviceObjectPath;
++    NetworkDeviceInfo* networkInfo;
++};
++
++} // namespace smbios
++
++} // namespace phosphor
+diff --git a/include/pcieNetworkFunction.hpp b/include/pcieNetworkFunction.hpp
+new file mode 100644
+index 0000000..d1c076f
+--- /dev/null
++++ b/include/pcieNetworkFunction.hpp
+@@ -0,0 +1,55 @@
++#pragma once
++#include "network.hpp"
++#include "pcieFunction.hpp"
++#include "smbios_mdrv2.hpp"
++
++namespace phosphor
++{
++
++namespace smbios
++{
++
++using pcieFunction = phosphor::smbios::PcieFunction;
++using networkDevice = phosphor::smbios::NetworkDevice;
++
++class PCIeNetworkFunction
++{
++  public:
++    PCIeNetworkFunction() = delete;
++    PCIeNetworkFunction(const PCIeNetworkFunction&) = delete;
++    PCIeNetworkFunction& operator=(const PCIeNetworkFunction&) = delete;
++    PCIeNetworkFunction(PCIeNetworkFunction&&) = delete;
++    PCIeNetworkFunction& operator=(PCIeNetworkFunction&&) = delete;
++    ~PCIeNetworkFunction() = default;
++
++    struct PcieNetworkFunc
++    {
++        pcieFunction::PcieFunctionInfo funcInfo;
++        networkDevice::NetworkDeviceInfo networkInfo;
++    } __attribute__((packed));
++
++    PCIeNetworkFunction(sdbusplus::bus_t& bus, const uint8_t& funcIndex,
++                        uint8_t* smbiosTableStorage,
++                        const std::string& pcieDevice) :
++        bus(bus), funcIndex(funcIndex), pcieDeviceObjPath(pcieDevice)
++    {
++        updateDeviceFunc(smbiosTableStorage, pcieDeviceObjPath);
++    }
++
++    void updateDeviceFunc(uint8_t* smbiosTableStorage,
++                               const std::string& pcieDevice);
++    std::string getMacAddress(const uint8_t positionNum,
++                              const uint8_t structLen, uint8_t* dataIn);
++
++  private:
++    sdbusplus::bus_t& bus;
++    uint8_t funcIndex;
++    uint16_t handle;
++    std::string pcieDeviceObjPath;
++    std::unique_ptr<pcieFunction> pcieFunc = nullptr;
++    std::unique_ptr<networkDevice> networkDev = nullptr;
++};
++
++} // namespace smbios
++
++} // namespace phosphor
+diff --git a/include/pciedevice.hpp b/include/pciedevice.hpp
+index 7ea65ed..87da35d 100644
+--- a/include/pciedevice.hpp
++++ b/include/pciedevice.hpp
+@@ -3,6 +3,7 @@
+ 
+ #include <xyz/openbmc_project/Association/Definitions/server.hpp>
+ #include <xyz/openbmc_project/Inventory/Decorator/Asset/server.hpp>
++#include <xyz/openbmc_project/Inventory/Item/Ethernet/server.hpp>
+ #include <xyz/openbmc_project/Inventory/Item/PCIeDevice/server.hpp>
+ #include <xyz/openbmc_project/Inventory/Item/PCIeSlot/server.hpp>
+ #include <xyz/openbmc_project/Inventory/Item/Storage/server.hpp>
+@@ -30,6 +31,8 @@ using softwareVersion =
+     sdbusplus::server::xyz::openbmc_project::software::Version;
+ using storageDevice =
+     sdbusplus::server::xyz::openbmc_project::inventory::item::Storage;
++using ethernetDevice =
++    sdbusplus::server::xyz::openbmc_project::inventory::item::Ethernet;
+ 
+ class PcieDevice :
+     sdbusplus::server::object_t<asset, pcieDevice, item, softwareVersion,
+@@ -47,6 +50,11 @@ class PcieDevice :
+         {
+             storageItf.reset();
+         }
++
++        if (ethernetItf)
++        {
++            ethernetItf.reset();
++        }
+     }
+ 
+     PcieDevice(sdbusplus::bus_t& bus, const std::string& objPath,
+@@ -83,6 +91,16 @@ class PcieDevice :
+         }
+     }
+ 
++    void addEthernetInterface()
++    {
++        if (!ethernetItf)
++        {
++            ethernetItf =
++                std::make_unique<sdbusplus::server::object_t<ethernetDevice>>(
++                    bus, objectPath.c_str());
++        }
++    }
++
+   private:
+     sdbusplus::bus_t& bus;
+     uint8_t pcieDeviceIndex;
+@@ -91,6 +109,8 @@ class PcieDevice :
+     uint16_t handle = 0;
+     std::unique_ptr<sdbusplus::server::object_t<storageDevice>> storageItf =
+         nullptr;
++    std::unique_ptr<sdbusplus::server::object_t<ethernetDevice>> ethernetItf =
++        nullptr;
+ 
+     struct PCIeDeviceInfo
+     {
+diff --git a/include/smbios_mdrv2.hpp b/include/smbios_mdrv2.hpp
+index 0d2c899..d07487e 100644
+--- a/include/smbios_mdrv2.hpp
++++ b/include/smbios_mdrv2.hpp
+@@ -210,6 +210,7 @@ typedef enum
+     firmwareInventoryInformationType = 45,
+     pcieDeviceType = 128,
+     pcieStorageFunction = 130,
++    pcieNetworkFunction = 131,
+ } SmbiosType;
+ 
+ static constexpr uint8_t separateLen = 2;
+diff --git a/src/mdrv2.cpp b/src/mdrv2.cpp
+index d81222f..c794163 100644
+--- a/src/mdrv2.cpp
++++ b/src/mdrv2.cpp
+@@ -764,6 +764,54 @@ void MDRV2::systemInfoUpdate()
+                 pcieDevicePath));
+     }
+ 
++    num = getTotalSmbiosEntries(pcieNetworkFunction);
++    if (!num)
++    {
++        lg2::error("Get total pcie network function failed.");
++        return;
++    }
++
++    pcieNetworkFuncs.clear();
++    for (unsigned int index = 0; index < *num; index++)
++    {
++        std::string pcieDevicePath;
++        uint8_t* pcieDevicePtr =
++            getTableData(smbiosDir.dir[smbiosDirIndex].dataStorage,
++                         pcieNetworkFunction, index);
++
++        if (pcieDevicePtr)
++        {
++            // The format of PCIe Network function SMBIOS table is:
++            //  - Type: 1 byte
++            //  - length: 1 byte
++            //  - handle: 2 bytes
++            //  - Associate Hanlde: 2 bytes
++            //  ...
++            uint16_t associateHandle =
++                *(reinterpret_cast<uint16_t*>(pcieDevicePtr + 4));
++
++            for (auto it = pcieDevices.begin(); it != pcieDevices.end(); it++)
++            {
++                if ((*it)->getHandle() == associateHandle)
++                {
++                    pcieDevicePath = (*it)->getObjectPath();
++                    (*it)->addEthernetInterface();
++                    break;
++                }
++            }
++        }
++
++        if (pcieDevicePath.empty())
++        {
++            continue;
++        }
++
++        pcieNetworkFuncs.emplace_back(
++            std::make_unique<phosphor::smbios::PCIeNetworkFunction>(
++                *bus, index, smbiosDir.dir[smbiosDirIndex].dataStorage,
++                pcieDevicePath));
++    }
++
+ #endif
+ 
+     system.reset();
+diff --git a/src/meson.build b/src/meson.build
+index 4b987ae..f17985a 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -49,6 +49,8 @@ executable(
+     'pcieFunction.cpp',
+     'pcieStorageFunction.cpp',
+     'drive.cpp',
++    'pcieNetworkFunction.cpp',
++    'network.cpp',
+     cpp_args: cpp_args_smbios,
+     dependencies: [
+         boost_dep,
+diff --git a/src/network.cpp b/src/network.cpp
+new file mode 100644
+index 0000000..90399f5
+--- /dev/null
++++ b/src/network.cpp
+@@ -0,0 +1,38 @@
++#include "network.hpp"
++
++#include "smbios_mdrv2.hpp"
++
++namespace phosphor
++{
++namespace smbios
++{
++
++void NetworkDevice::networkUpdate(const std::string& macAddress)
++{
++    if (!networkInfo)
++    {
++        return;
++    }
++
++    networkInterface::macAddress(macAddress);
++
++    std::vector<std::tuple<std::string, std::string, std::string>> assocs;
++    if (!funcObjectPath.empty())
++    {
++        assocs.emplace_back("transmitted_by", "received_by", funcObjectPath);
++    }
++
++    if (!pcieDeviceObjectPath.empty())
++    {
++        assocs.emplace_back("networked_by", "provides_network",
++                            pcieDeviceObjectPath);
++    }
++
++    if (!assocs.empty())
++    {
++        association::associations(assocs);
++    }
++}
++
++} // namespace smbios
++} // namespace phosphor
+diff --git a/src/pcieNetworkFunction.cpp b/src/pcieNetworkFunction.cpp
+new file mode 100644
+index 0000000..b5eb27f
+--- /dev/null
++++ b/src/pcieNetworkFunction.cpp
+@@ -0,0 +1,54 @@
++#include "pcieNetworkFunction.hpp"
++
++#include "smbios_mdrv2.hpp"
++
++namespace phosphor
++{
++
++namespace smbios
++{
++
++void PCIeNetworkFunction::updateDeviceFunc(uint8_t* smbiosTableStorage,
++                                                const std::string& pcieDevice)
++{
++    pcieDeviceObjPath = pcieDevice;
++    uint8_t* dataIn =
++        getTableData(smbiosTableStorage, pcieNetworkFunction, funcIndex);
++
++    if (!dataIn)
++    {
++        return;
++    }
++
++    auto pcieDeviceInfo = reinterpret_cast<struct PcieNetworkFunc*>(dataIn);
++    auto pcieFuncInfo =
++        reinterpret_cast<struct pcieFunction::PcieFunctionInfo*>(
++            &(pcieDeviceInfo->funcInfo));
++    auto networkInfo =
++        reinterpret_cast<struct networkDevice::NetworkDeviceInfo*>(
++            &(pcieDeviceInfo->networkInfo));
++
++    // Get Mac address
++    std::string macAddress =
++        getMacAddress(networkInfo->macAddress, pcieFuncInfo->length, dataIn);
++    std::string funcPath =
++        pcieDeviceObjPath + "/Function" +
++        std::to_string(pcieDeviceInfo->funcInfo.functionNumber);
++    std::string drivePath =
++        funcPath + "/NetworkInterface" + std::to_string(funcIndex);
++
++    pcieFunc = std::make_unique<pcieFunction>(bus, funcPath, pcieFuncInfo,
++                                              pcieDeviceObjPath);
++    networkDev = std::make_unique<networkDevice>(
++        bus, drivePath, networkInfo, funcPath, pcieDeviceObjPath, macAddress);
++}
++
++std::string PCIeNetworkFunction::getMacAddress(
++    const uint8_t positionNum, const uint8_t structLen, uint8_t* dataIn)
++{
++    return positionToString(positionNum, structLen, dataIn);
++}
++
++} // namespace smbios
++
++} // namespace phosphor
