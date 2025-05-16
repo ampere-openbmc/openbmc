@@ -1,0 +1,327 @@
+description: >
+    This defines a PCIe device to be exposed for system management.  It includes
+    the device properties and function properties for all 8 possible functions
+    that are needed for the device identification.
+
+properties:
+    - name: DeviceType
+      type: enum[self.DeviceTypes]
+      default: "Unknown"
+      description: >
+          Indicates if the device is MultiFunction or SingleFunction.
+    - name: GenerationInUse
+      type: enum[xyz.openbmc_project.Inventory.Item.PCIeSlot.Generations]
+      default: "Unknown"
+      description: >
+          The PCIe interface generation in use by the device.
+    - name: GenerationSupported
+      type: enum[xyz.openbmc_project.Inventory.Item.PCIeSlot.Generations]
+      default: "Unknown"
+      description: >
+          The maximum PCIe generation supported by the device.
+
+    - name: Function0ClassCode
+      type: string
+      description: >
+          The Class Code for this function.
+    - name: Function0DeviceClass
+      type: string
+      description: >
+          The Device Class for this function.
+    - name: Function0DeviceId
+      type: string
+      description: >
+          The Device ID for this function.
+    - name: Function0FunctionType
+      type: string
+      description: >
+          Indicates if the function is Physical or Virtual
+    - name: Function0RevisionId
+      type: string
+      description: >
+          The Revision ID for this function.
+    - name: Function0SubsystemId
+      type: string
+      description: >
+          The Subsystem ID for this function.
+    - name: Function0SubsystemVendorId
+      type: string
+      description: >
+          The Subsystem Vendor ID for this function.
+    - name: Function0VendorId
+      type: string
+      description: >
+          The Vendor ID for this function.
+
+    - name: Function1ClassCode
+      type: string
+      description: >
+          The Class Code for this function.
+    - name: Function1DeviceClass
+      type: string
+      description: >
+          The Device Class for this function.
+    - name: Function1DeviceId
+      type: string
+      description: >
+          The Device ID for this function.
+    - name: Function1FunctionType
+      type: string
+      description: >
+          Indicates if the function is Physical or Virtual
+    - name: Function1RevisionId
+      type: string
+      description: >
+          The Revision ID for this function.
+    - name: Function1SubsystemId
+      type: string
+      description: >
+          The Subsystem ID for this function.
+    - name: Function1SubsystemVendorId
+      type: string
+      description: >
+          The Subsystem Vendor ID for this function.
+    - name: Function1VendorId
+      type: string
+      description: >
+          The Vendor ID for this function.
+
+    - name: Function2ClassCode
+      type: string
+      description: >
+          The Class Code for this function.
+    - name: Function2DeviceClass
+      type: string
+      description: >
+          The Device Class for this function.
+    - name: Function2DeviceId
+      type: string
+      description: >
+          The Device ID for this function.
+    - name: Function2FunctionType
+      type: string
+      description: >
+          Indicates if the function is Physical or Virtual
+    - name: Function2RevisionId
+      type: string
+      description: >
+          The Revision ID for this function.
+    - name: Function2SubsystemId
+      type: string
+      description: >
+          The Subsystem ID for this function.
+    - name: Function2SubsystemVendorId
+      type: string
+      description: >
+          The Subsystem Vendor ID for this function.
+    - name: Function2VendorId
+      type: string
+      description: >
+          The Vendor ID for this function.
+
+    - name: Function3ClassCode
+      type: string
+      description: >
+          The Class Code for this function.
+    - name: Function3DeviceClass
+      type: string
+      description: >
+          The Device Class for this function.
+    - name: Function3DeviceId
+      type: string
+      description: >
+          The Device ID for this function.
+    - name: Function3FunctionType
+      type: string
+      description: >
+          Indicates if the function is Physical or Virtual
+    - name: Function3RevisionId
+      type: string
+      description: >
+          The Revision ID for this function.
+    - name: Function3SubsystemId
+      type: string
+      description: >
+          The Subsystem ID for this function.
+    - name: Function3SubsystemVendorId
+      type: string
+      description: >
+          The Subsystem Vendor ID for this function.
+    - name: Function3VendorId
+      type: string
+      description: >
+          The Vendor ID for this function.
+
+    - name: Function4ClassCode
+      type: string
+      description: >
+          The Class Code for this function.
+    - name: Function4DeviceClass
+      type: string
+      description: >
+          The Device Class for this function.
+    - name: Function4DeviceId
+      type: string
+      description: >
+          The Device ID for this function.
+    - name: Function4FunctionType
+      type: string
+      description: >
+          Indicates if the function is Physical or Virtual
+    - name: Function4RevisionId
+      type: string
+      description: >
+          The Revision ID for this function.
+    - name: Function4SubsystemId
+      type: string
+      description: >
+          The Subsystem ID for this function.
+    - name: Function4SubsystemVendorId
+      type: string
+      description: >
+          The Subsystem Vendor ID for this function.
+    - name: Function4VendorId
+      type: string
+      description: >
+          The Vendor ID for this function.
+
+    - name: Function5ClassCode
+      type: string
+      description: >
+          The Class Code for this function.
+    - name: Function5DeviceClass
+      type: string
+      description: >
+          The Device Class for this function.
+    - name: Function5DeviceId
+      type: string
+      description: >
+          The Device ID for this function.
+    - name: Function5FunctionType
+      type: string
+      description: >
+          Indicates if the function is Physical or Virtual
+    - name: Function5RevisionId
+      type: string
+      description: >
+          The Revision ID for this function.
+    - name: Function5SubsystemId
+      type: string
+      description: >
+          The Subsystem ID for this function.
+    - name: Function5SubsystemVendorId
+      type: string
+      description: >
+          The Subsystem Vendor ID for this function.
+    - name: Function5VendorId
+      type: string
+      description: >
+          The Vendor ID for this function.
+
+    - name: Function6ClassCode
+      type: string
+      description: >
+          The Class Code for this function.
+    - name: Function6DeviceClass
+      type: string
+      description: >
+          The Device Class for this function.
+    - name: Function6DeviceId
+      type: string
+      description: >
+          The Device ID for this function.
+    - name: Function6FunctionType
+      type: string
+      description: >
+          Indicates if the function is Physical or Virtual
+    - name: Function6RevisionId
+      type: string
+      description: >
+          The Revision ID for this function.
+    - name: Function6SubsystemId
+      type: string
+      description: >
+          The Subsystem ID for this function.
+    - name: Function6SubsystemVendorId
+      type: string
+      description: >
+          The Subsystem Vendor ID for this function.
+    - name: Function6VendorId
+      type: string
+      description: >
+          The Vendor ID for this function.
+
+    - name: Function7ClassCode
+      type: string
+      description: >
+          The Class Code for this function.
+    - name: Function7DeviceClass
+      type: string
+      description: >
+          The Device Class for this function.
+    - name: Function7DeviceId
+      type: string
+      description: >
+          The Device ID for this function.
+    - name: Function7FunctionType
+      type: string
+      description: >
+          Indicates if the function is Physical or Virtual
+    - name: Function7RevisionId
+      type: string
+      description: >
+          The Revision ID for this function.
+    - name: Function7SubsystemId
+      type: string
+      description: >
+          The Subsystem ID for this function.
+    - name: Function7SubsystemVendorId
+      type: string
+      description: >
+          The Subsystem Vendor ID for this function.
+    - name: Function7VendorId
+      type: string
+      description: >
+          The Vendor ID for this function.
+
+    - name: MaxLanes
+      type: size
+      default: 0
+      description: >
+          The maximum number of PCIe lanes supported by the PCIe Device
+    - name: LanesInUse
+      type: size
+      default: maxint
+      description: >
+          The number of PCIe lanes in use by this device. Default value of
+          maxint is to accommodate the situation where the value of this
+          property is not known due to some unknown reason, like hardware
+          failure. The value of 0 indicates that the link is not active.
+
+enumerations:
+    - name: DeviceTypes
+      description: >
+          Possible Device Type
+      values:
+          - name: "MultiFunction"
+            description: >
+                Indicates if the device is MultiFunction
+          - name: "Simulated"
+            description: >
+                Indicates if the device is Simulated
+          - name: "SingleFunction"
+            description: >
+                Indicates if the device is Single Function
+          - name: "Unknown"
+            description: >
+                Indicates if the device is Unknown
+
+associations:
+    - name: upstream_pcie_slot
+      description: >
+          Objects that implement PCIeDevice can optionally implement the
+          upstream_pcie_slot association to provide a link back to a PCIe slot.
+      reverse_names:
+          - associated_pcie_device
+      required_endpoint_interfaces:
+          - xyz.openbmc_project.Inventory.Item.PCIeSlot
