@@ -1,8 +1,12 @@
 [Unit]
 Description=Ampere BERT handler for power action of the host
 After=obmc-host-stop@0.target
+Before=obmc-host-startmin@0.target
+Before=obmc-host-start@0.target
+Before=obmc-host-warm-reboot@0.target
+Before=obmc-host-force-warm-reboot@0.target
 Before=obmc-host-reboot@0.target
-Before=ampere-host-force-reset@0.service
+Before=obmc-power-start-pre@0.target
 
 [Service]
 Restart=no
