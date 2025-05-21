@@ -4,7 +4,7 @@
 
 # Usage of this utility
 function usage() {
-	echo "usage: ampere_power_util mb [shutdown_ack|soft_off|force_reset]"
+	echo "usage: ampere_power_util mb [shutdown_ack|soft_off|force_reset|host_reboot_wa]"
 }
 
 shutdown_ack() {
@@ -74,12 +74,33 @@ force_reset() {
 	gpioset $(gpiofind host0-sysreset-n)=1
 }
 
+host_reboot_wa() {
+    busctl set-property xyz.openbmc_project.State.Chassis \
+        /xyz/openbmc_project/state/chassis0 xyz.openbmc_project.State.Chassis \
+        RequestedPowerTransition s "xyz.openbmc_project.State.Chassis.Transition.Off"
+
+    while ( true )
+    do
+        if systemctl status obmc-power-off@0.target | grep "Active: active"; then
+            break;
+        fi
+        sleep 2
+    done
+    echo "The power is already Off."
+
+    busctl set-property xyz.openbmc_project.State.Host \
+        /xyz/openbmc_project/state/host0 xyz.openbmc_project.State.Host \
+        RequestedHostTransition s "xyz.openbmc_project.State.Host.Transition.On"
+}
+
 mkdir -p "/run/openbmc/"
 
 if [ "$2" == "shutdown_ack" ]; then
 	shutdown_ack
 elif [ "$2" == "force_reset" ]; then
 	force_reset
+elif [ "$2" == "host_reboot_wa" ]; then
+	host_reboot_wa
 elif [ "$2" == "soft_off" ]; then
 	ret=$(soft_off)
 	if [ "$ret" == 0 ]; then
