@@ -1,0 +1,61 @@
+From 15c5660062fcaa8da9f7b64250f3c74a980e9c4b Mon Sep 17 00:00:00 2001
+From: Huy Anh Le <hule@amperecomputing.com>
+Date: Thu, 29 May 2025 10:47:50 +0700
+Subject: [PATCH] fix: show manual lock after failed attempts
+
+Currently, when configured in Manual mode, if a user exceeds
+the allowed number of failed login attempts:
+- The Locked field on Redfish/DBus is not set to true.
+- The Enabled field remains true (the user is not disabled).
+However, in reality, the user cannot log in (PAM backend denies access).
+This causes confusion for administrators because there is no attribute
+in the UI indicating that the user is manually locked.
+This commit updates the logic to accurately reflect the account's locked
+status when the user is manually locked due to too many failed login attempts.
+
+Tested:
+ - Verified that after exceeding allowed login attempts in Manual mode,
+   the account lock status is correctly reflected.
+ - Checked that the Locked field is updated on Redfish/DBus and user cannot
+   log in as expected. Locked as True
+
+Upstream-Status: Pending
+
+Signed-off-by: Huy Anh Le <hule@amperecomputing.com>
+---
+ user_mgr.cpp | 15 ++++++++++++---
+ 1 file changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/user_mgr.cpp b/user_mgr.cpp
+index f4e745f..b6133ae 100644
+--- a/user_mgr.cpp
++++ b/user_mgr.cpp
+@@ -841,13 +841,22 @@ bool UserMgr::parseFaillockForLockout(
+         return false;
+     }
+ 
+-    if (lastFailedAttempt +
++    // If an automatic unlock timeout is configured
++    if (AccountPolicyIface::accountUnlockTimeout() > 0)
++    {
++        // Check if the lockout period has expired since the last failed login attempt
++        if (lastFailedAttempt +
+             static_cast<time_t>(AccountPolicyIface::accountUnlockTimeout()) <=
+         std::time(NULL))
+-    {
+-        return false;
++        {
++            // If the lockout period has expired, the account is no longer locked.
++            return false;
++        }
+     }
+ 
++    // If the number of failed login attempts exceeds the limit
++    // and the lockout period has not expired
++    // (or there is no automatic unlock, i.e. manual mode), the account remains locked.
+     return true;
+ }
+ 
+-- 
+2.43.0
+
