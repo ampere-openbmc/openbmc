@@ -24,6 +24,7 @@ SRC_URI += " \
             file://0009-LogService-Support-download-FaultLog-data-via-Additi.patch \
             file://0010-update-service-get-ApplyTime-from-Dbus.patch \
             file://0011-Improve-IPv4-default-gateway-removal.patch \
+            file://0012-Support-to-show-PCIe-Device-properties.patch \
             file://ampere-registries.json \
            "
 do_compile[network] = "1"
