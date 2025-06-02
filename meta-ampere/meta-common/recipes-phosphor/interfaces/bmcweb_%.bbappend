@@ -20,6 +20,7 @@ SRC_URI += " \
             file://0010-update-service-get-ApplyTime-from-Dbus.patch \
             file://0011-managers-pid-fan-Ignore-AccumulateSetPoint.patch \
             file://0012-Improve-IPv4-default-gateway-removal.patch \
+            file://0013-Support-to-show-PCIe-Device-properties.patch \
             file://ampere-registries.json \
            "
 do_compile[network] = "1"
