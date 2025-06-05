@@ -1,6 +1,8 @@
 #!/bin/bash
 
 # shellcheck disable=SC2046
+# shellcheck source=meta-ampere/meta-common/recipes-ampere/host/ampere-hostctrl/ampere-bert-wait-complete.sh
+source /usr/sbin/ampere-bert-wait-complete.sh
 
 # Usage of this utility
 function usage() {
@@ -104,6 +106,8 @@ host_reboot_wa() {
         exit 0
     fi
     echo "The power is already Off."
+
+    wait_bert_complete
 
     busctl set-property xyz.openbmc_project.State.Host \
         /xyz/openbmc_project/state/host0 xyz.openbmc_project.State.Host \
