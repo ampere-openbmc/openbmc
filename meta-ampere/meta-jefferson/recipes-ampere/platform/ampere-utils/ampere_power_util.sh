@@ -79,13 +79,21 @@ host_reboot_wa() {
         /xyz/openbmc_project/state/chassis0 xyz.openbmc_project.State.Chassis \
         RequestedPowerTransition s "xyz.openbmc_project.State.Chassis.Transition.Off"
 
-    while ( true )
+    cnt=120
+    while [ $cnt -gt 0 ];
     do
         if systemctl status obmc-chassis-powered-off@0.target | grep "Active: active"; then
             break;
         fi
+        echo "Waiting for chassis powered off count down $cnt"
         sleep 1
+        cnt=$((cnt - 1))
     done
+
+    if [ $cnt == 0 ]; then
+        echo "Failed to turn off the chassis power after 120s."
+        exit 0
+    fi
     echo "The power is already Off."
 
     busctl set-property xyz.openbmc_project.State.Host \
