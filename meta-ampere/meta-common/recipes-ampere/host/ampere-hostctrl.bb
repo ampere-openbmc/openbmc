@@ -20,6 +20,7 @@ SRC_URI = " \
            file://obmc-host-already-on@.target \
            file://ampere-bmc-reboot-host-check@.service \
            file://ampere_wait_for_warm_up@.service \
+           file://ampere-bert-wait-complete.sh \
           "
 
 SYSTEMD_PACKAGES = "${PN}"
@@ -77,4 +78,5 @@ SYSTEMD_LINK:${PN} += "${@compose_list_zip(d, 'HOST_ON_TARGET_FMT', 'OBMC_HOST_I
 do_install() {
     install -d ${D}/usr/sbin
     install -m 0755 ${UNPACKDIR}/ampere_host_check.sh ${D}/${sbindir}/
+    install -m 0755 ${UNPACKDIR}/ampere-bert-wait-complete.sh ${D}/${sbindir}/
 }
