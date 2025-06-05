@@ -90,10 +90,10 @@ host_reboot_wa() {
 
     while ( true )
     do
-        if systemctl status obmc-power-off@0.target | grep "Active: active"; then
+        if systemctl status obmc-chassis-powered-off@0.target | grep "Active: active"; then
             break;
         fi
-        sleep 2
+        sleep 1
     done
     echo "The power is already Off."
 
