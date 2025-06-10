@@ -21,6 +21,7 @@ SRC_URI += " \
             file://0011-managers-pid-fan-Ignore-AccumulateSetPoint.patch \
             file://0012-Improve-IPv4-default-gateway-removal.patch \
             file://0013-Support-to-show-PCIe-Device-properties.patch \
+            file://0014-Support-to-show-PCIe-Function-properties.patch \
             file://ampere-registries.json \
            "
 do_compile[network] = "1"
