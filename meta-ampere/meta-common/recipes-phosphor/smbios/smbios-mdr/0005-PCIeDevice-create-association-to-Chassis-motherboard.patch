@@ -1,0 +1,115 @@
+From 0190d8e501c04abf46721aadd16286dae845b0f8 Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Wed, 11 Jun 2025 14:26:22 +0700
+Subject: [PATCH] PCIeDevice: create association to Chassis motherboard
+
+This commit adds association from PCIeDevice object paths to Chassis
+mother board to Redfish can get the list PCIeDevice that belong to that
+chassis.
+
+Upstream-Status: Pending
+
+Tested:
+1.Show the association property of PCIe device object
+  busctl get-property xyz.openbmc_project.Smbios.MDR_V2 \
+  /xyz/openbmc_project/inventory/system/chassis/motherboard/pciedevice6
+  xyz.openbmc_project.Association.Definitions Associations
+2.The result of above command includes "chassis" "pcie_devices"
+  association
+```
+{
+  "type" : "a(sss)",
+  "data" : [
+    [
+      "contained_by",
+      "associated_pcie_device",
+      "/xyz/openbmc_project/inventory/system/chassis/motherboard/pcieslot10"
+    ],
+    [
+      "chassis",
+      "pcie_devices",
+      "/xyz/openbmc_project/inventory/system/board/Mt_Mitchell_Motherboard"
+    ]
+  ]
+}
+```
+
+Change-Id: I5c19e1f6082af44d3499f0d6e39e2554a052b6e1
+Signed-off-by: Thang Tran <thuutran@amperecomputing.com>
+---
+ include/pciedevice.hpp |  5 +++--
+ src/mdrv2.cpp          |  2 +-
+ src/pciedevice.cpp     | 16 ++++++++++++++--
+ 3 files changed, 18 insertions(+), 5 deletions(-)
+
+diff --git a/include/pciedevice.hpp b/include/pciedevice.hpp
+index 65f79fb..35a6035 100644
+--- a/include/pciedevice.hpp
++++ b/include/pciedevice.hpp
+@@ -67,11 +67,11 @@ class PcieDevice :
+ 
+     PcieDevice(sdbusplus::bus_t& bus, const std::string& objPath,
+                const uint8_t& PcieDeviceId, uint8_t* smbiosTableStorage,
+-               const std::string& pcieSlot) :
++               const std::string& pcieSlot, const std::string& motherboard) :
+         sdbusplus::server::object_t<asset, pcieDevice, item, softwareVersion,
+                                     association>(bus, objPath.c_str()),
+         bus(bus), pcieDeviceIndex(PcieDeviceId), pcieSlotObjPath(pcieSlot),
+-        objectPath(objPath)
++        objectPath(objPath), motherboardObjPath(motherboard)
+     {
+         pcieDeviceInfoUpdate(smbiosTableStorage, pcieSlotObjPath);
+     }
+@@ -123,6 +123,7 @@ class PcieDevice :
+     uint8_t pcieDeviceIndex;
+     std::string pcieSlotObjPath;
+     std::string objectPath;
++    std::string motherboardObjPath;
+     uint16_t handle = 0;
+     std::unique_ptr<sdbusplus::server::object_t<storageDevice>> storageItf =
+         nullptr;
+diff --git a/src/mdrv2.cpp b/src/mdrv2.cpp
+index 59f1a73..c70e18d 100644
+--- a/src/mdrv2.cpp
++++ b/src/mdrv2.cpp
+@@ -713,7 +713,7 @@ void MDRV2::systemInfoUpdate()
+ 
+         pcieDevices.emplace_back(std::make_unique<phosphor::smbios::PcieDevice>(
+             *bus, path, index, smbiosDir.dir[smbiosDirIndex].dataStorage,
+-            pcieSlotObjPath));
++            pcieSlotObjPath, motherboardPath));
+     }
+ 
+     num = getTotalSmbiosEntries(pcieCxlFunction);
+diff --git a/src/pciedevice.cpp b/src/pciedevice.cpp
+index d0465ba..3243ba6 100644
+--- a/src/pciedevice.cpp
++++ b/src/pciedevice.cpp
+@@ -36,10 +36,22 @@ void PcieDevice::pcieDeviceInfoUpdate(uint8_t* smbiosTableStorage,
+     currentLinkSpeed(pcieDeviceInfo->currentLinkSpeed);
+     maxLinkSpeed(pcieDeviceInfo->maxLinkSpeed);
+ 
++    std::vector<std::tuple<std::string, std::string, std::string>> assocs;
++
+     if (!pcieSlotObjPath.empty())
+     {
+-        association::associations(
+-            {{"contained_by", "associated_pcie_device", pcieSlotObjPath}});
++        assocs.emplace_back("contained_by", "associated_pcie_device",
++                            pcieSlotObjPath);
++    }
++
++    if (!motherboardObjPath.empty())
++    {
++        assocs.emplace_back("chassis", "pcie_devices", motherboardObjPath);
++    }
++
++    if (!assocs.empty())
++    {
++        association::associations(assocs);
+     }
+ 
+     handle = pcieDeviceInfo->handle;
+-- 
+2.43.0
+

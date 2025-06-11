@@ -7,4 +7,5 @@ SRC_URI:append = " \
                   file://0002-Expose-the-SMBIOS-Type-130-Storage-Device-Function-i.patch \
                   file://0003-Expose-the-SMBIOS-Type-131-Network-Device-Function-i.patch \
                   file://0004-Expose-the-SMBIOS-Type-129-CXL-Function-information.patch \
+                  file://0005-PCIeDevice-create-association-to-Chassis-motherboard.patch \
                  "
