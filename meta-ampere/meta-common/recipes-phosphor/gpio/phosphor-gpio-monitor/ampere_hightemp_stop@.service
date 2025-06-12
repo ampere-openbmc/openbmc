@@ -1,7 +1,10 @@
 [Unit]
-Description=Ampere Computing LLC HighTemp Deassertion event
+Description=Ampere Computing LLC CPU%i HighTemp Deassertion event
 StartLimitIntervalSec=0
+StartLimitBurst=0
 
 [Service]
 Restart=no
-ExecStart=/usr/sbin/ampere_add_redfishevent.sh OpenBMC.0.1.AmpereEvent "CPU%i HighTemp deasserted"
+ExecStart=/usr/sbin/ampere_hightemp.sh %i deassert
+RemainAfterExit=no
+Type=oneshot
