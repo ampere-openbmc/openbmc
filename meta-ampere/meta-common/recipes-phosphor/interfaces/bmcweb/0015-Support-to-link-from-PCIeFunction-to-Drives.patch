@@ -1,0 +1,79 @@
+From 26f73c24b56b341561de44c2fea202847f63624c Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Mon, 16 Jun 2025 08:02:38 +0000
+Subject: [PATCH 2/2] Support to link from PCIeFunction to Drives
+
+This commit supports the links from PCIe Storage Function to Drive.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ redfish-core/lib/pcie.hpp | 44 +++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 44 insertions(+)
+
+diff --git a/redfish-core/lib/pcie.hpp b/redfish-core/lib/pcie.hpp
+index 143c4295..f79f68d5 100644
+--- a/redfish-core/lib/pcie.hpp
++++ b/redfish-core/lib/pcie.hpp
+@@ -923,6 +923,48 @@ inline void addPCIeFunctionProperties(
+     }
+ }
+ 
++inline void getPcieFunctionAssociation(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& pcieDevicePath, const std::string& pcieDeviceId)
++{
++    dbus::utility::getProperty<std::vector<std::string>>(
++        "xyz.openbmc_project.ObjectMapper",
++        pcieDevicePath + "/provides_storage", "xyz.openbmc_project.Association",
++        "endpoints",
++        [asyncResp, pcieDeviceId](const boost::system::error_code& ec,
++                                  const std::vector<std::string>& driveList) {
++            if (ec)
++            {
++                if (ec.value() != EBADR)
++                {
++                    BMCWEB_LOG_ERROR("DBUS response error {}", ec.value());
++                    messages::internalError(asyncResp->res);
++                }
++                return;
++            }
++
++            nlohmann::json::array_t drives;
++            for (const std::string& drivePath : driveList)
++            {
++                std::string id =
++                    sdbusplus::message::object_path(drivePath).filename();
++                if (id.empty())
++                {
++                    continue;
++                }
++
++                nlohmann::json::object_t drive;
++                drive["@odata.id"] = boost::urls::format(
++                    "/redfish/v1/Systems/{}/Storage/{}/Drives/{}",
++                    BMCWEB_REDFISH_SYSTEM_URI_NAME, pcieDeviceId, id);
++                drives.emplace_back(std::move(drive));
++            }
++            asyncResp->res.jsonValue["Links"]["Drives@odata.count"] =
++                drives.size();
++            asyncResp->res.jsonValue["Links"]["Drives"] = std::move(drives);
++        });
++}
++
+ inline void addPCIeFunctionCommonProperties(crow::Response& resp,
+                                             const std::string& pcieDeviceId,
+                                             uint64_t pcieFunctionId)
+@@ -1164,6 +1206,8 @@ inline void handlePCIeFunctionGet(
+                         });
+                     getPCIeFunctionPropertiesFromFunctionDbus(
+                         asyncResp, pcieFunctionPath, service);
++                    getPcieFunctionAssociation(asyncResp, pcieDevicePath,
++                                               pcieDeviceId);
+                 });
+         });
+ }
+-- 
+2.43.0
+
