@@ -1,0 +1,65 @@
+From 0f5d06e22632c40005fe29d74f22bc9481ca30fa Mon Sep 17 00:00:00 2001
+From: Huy Anh Le <hule@amperecomputing.com>
+Date: Fri, 13 Jun 2025 22:17:59 +0700
+Subject: [PATCH] Preserve selected network interface across reloads
+
+Currently, the code always resets the selected interface
+to the first interface during data refresh, causing the
+user's interface selection to be lost.
+For example, when trying to configure DNS settings for eth1,
+after a data refresh, the selection would jump back to eth0,
+potentially causing DNS configurations to be applied to the
+wrong interface.
+This change prevents the interface selection from resetting to
+the first interface every time the ethernet data is refreshed,
+improving the user experience by maintaining the user's selected
+interface.
+
+Tested:
+ - Login to WebUI -> Settings -> Network -> Select eth1
+ - Add IP Address in Static DNS settings
+ - Verify correct interface selection persists in both WebUI
+   and Redfish API"
+
+Upstream-Status: Pending
+
+Signed-off-by: Huy Anh Le <hule@amperecomputing.com>
+---
+ src/store/modules/Settings/NetworkStore.js | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/src/store/modules/Settings/NetworkStore.js b/src/store/modules/Settings/NetworkStore.js
+index d4174e3..79923b0 100644
+--- a/src/store/modules/Settings/NetworkStore.js
++++ b/src/store/modules/Settings/NetworkStore.js
+@@ -76,7 +76,7 @@ const NetworkStore = {
+       (state.selectedInterfaceIndex = selectedInterfaceIndex),
+   },
+   actions: {
+-    async getEthernetData({ commit }) {
++    async getEthernetData({ commit, state }) {
+       return await api
+         .get(`${await this.dispatch('global/getBmcPath')}/EthernetInterfaces`)
+         .then((response) =>
+@@ -95,11 +95,16 @@ const NetworkStore = {
+           const ethernetData = ethernetInterfaces.map(
+             (ethernetInterface) => ethernetInterface.data,
+           );
+-          const firstInterfaceId = ethernetData[0].Id;
++
++          const firstInterfaceId = ethernetData[0]?.Id;
++          const selectedInterfaceId =
++            state.selectedInterfaceId === ''
++              ? firstInterfaceId
++              : state.selectedInterfaceId;
+ 
+           commit('setEthernetData', ethernetData);
+           commit('setFirstInterfaceId', firstInterfaceId);
+-          commit('setSelectedInterfaceId', firstInterfaceId);
++          commit('setSelectedInterfaceId', selectedInterfaceId);
+           commit('setGlobalNetworkSettings', ethernetInterfaces);
+         })
+         .catch((error) => {
+-- 
+2.43.0
+
