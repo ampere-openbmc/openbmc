@@ -1,0 +1,336 @@
+From afd262d4316f9ad4b663996c5c47d3716993c289 Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Thu, 19 Jun 2025 12:02:25 +0000
+Subject: [PATCH] Support to show PCIe Storage Function
+
+This commit supports the following:
++ Suppport to show the Storage in ServiceRoot
++ The links from Drive to PCIe Storage Function
++ Show the Drive properties: Drive:CapacityBytes, Drive:MediaType,
+  PCIeDevice:Model, PCIeDevice:PartNumber, PCIeDevice:SerialNumber.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ redfish-core/lib/service_root.hpp |   2 +
+ redfish-core/lib/storage.hpp      | 254 +++++++++++++++++++++++++++++-
+ redfish-core/src/redfish.cpp      |   3 +-
+ 3 files changed, 254 insertions(+), 5 deletions(-)
+
+diff --git a/redfish-core/lib/service_root.hpp b/redfish-core/lib/service_root.hpp
+index 34f0e318..04cfa528 100644
+--- a/redfish-core/lib/service_root.hpp
++++ b/redfish-core/lib/service_root.hpp
+@@ -81,6 +81,8 @@ inline void handleServiceRootGetImpl(
+     asyncResp->res.jsonValue["TelemetryService"]["@odata.id"] =
+         "/redfish/v1/TelemetryService";
+     asyncResp->res.jsonValue["Cables"]["@odata.id"] = "/redfish/v1/Cables";
++    asyncResp->res.jsonValue["Storage"]["@odata.id"] =
++        "/redfish/v1/Systems/system/Storage";
+ 
+     asyncResp->res.jsonValue["Links"]["ManagerProvidingService"]["@odata.id"] =
+         boost::urls::format("/redfish/v1/Managers/{}",
+diff --git a/redfish-core/lib/storage.hpp b/redfish-core/lib/storage.hpp
+index a7243a09..ebbe51c1 100644
+--- a/redfish-core/lib/storage.hpp
++++ b/redfish-core/lib/storage.hpp
+@@ -151,6 +151,69 @@ inline void getDrives(const std::shared_ptr<bmcweb::AsyncResp>& asyncResp)
+         std::bind_front(afterChassisDriveCollectionSubtree, asyncResp));
+ }
+ 
++inline void handleStoragePath(
++    const std::string& storageId,
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const dbus::utility::MapperGetSubTreePathsResponse& storagePaths,
++    const std::function<void(const std::string& storagePath,
++                             const std::string& service)>& callback)
++
++{
++    constexpr std::array<std::string_view, 1> storageInterface{
++        "xyz.openbmc_project.Inventory.Item.Storage"};
++    for (const std::string& storagePath : storagePaths)
++    {
++        std::string storageName =
++            sdbusplus::message::object_path(storagePath).filename();
++        if (storageName.empty() || storageName != storageId)
++        {
++            continue;
++        }
++
++        dbus::utility::getDbusObject(
++            storagePath, storageInterface,
++            [storagePath, asyncResp,
++             callback](const boost::system::error_code& ec,
++                       const dbus::utility::MapperGetObject& object) {
++                if (ec || object.empty())
++                {
++                    BMCWEB_LOG_ERROR("DBUS response error {}", ec);
++                    messages::internalError(asyncResp->res);
++                    return;
++                }
++                callback(storagePath, object.begin()->first);
++            });
++        return;
++    }
++
++    BMCWEB_LOG_WARNING("Storage not found");
++    messages::resourceNotFound(asyncResp->res, "Storage", storageId);
++}
++
++inline void getValidStoragePath(
++    const std::string& storageId,
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::function<void(const std::string& storagePath,
++                             const std::string& service)>& callback)
++{
++    constexpr std::array<std::string_view, 1> storageInterface{
++        "xyz.openbmc_project.Inventory.Item.Storage"};
++    dbus::utility::getSubTreePaths(
++        "/xyz/openbmc_project/inventory", 0, storageInterface,
++        [storageId, asyncResp, callback](
++            const boost::system::error_code& ec,
++            const dbus::utility::MapperGetSubTreePathsResponse& storagePaths) {
++            if (ec)
++            {
++                BMCWEB_LOG_ERROR("D-Bus response error on GetSubTree {}", ec);
++                messages::internalError(asyncResp->res);
++                return;
++            }
++            handleStoragePath(storageId, asyncResp, storagePaths, callback);
++            return;
++        });
++}
++
+ inline void afterSystemsStorageGetSubtree(
+     const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
+     const std::string& storageId, const boost::system::error_code& ec,
+@@ -185,10 +248,50 @@ inline void afterSystemsStorageGetSubtree(
+     asyncResp->res.jsonValue["Id"] = storageId;
+     asyncResp->res.jsonValue["Status"]["State"] = resource::State::Enabled;
+ 
+-    getDrives(asyncResp);
+-    asyncResp->res.jsonValue["Controllers"]["@odata.id"] =
+-        boost::urls::format("/redfish/v1/Systems/{}/Storage/{}/Controllers",
+-                            BMCWEB_REDFISH_SYSTEM_URI_NAME, storageId);
++    getValidStoragePath(
++        storageId, asyncResp,
++        [asyncResp, storageId](const std::string& storagePath,
++                               [[maybe_unused]] const std::string&) {
++            dbus::utility::getProperty<std::vector<std::string>>(
++                "xyz.openbmc_project.ObjectMapper",
++                storagePath + "/provides_storage",
++                "xyz.openbmc_project.Association", "endpoints",
++                [asyncResp,
++                 storageId](const boost::system::error_code& ec2,
++                            const std::vector<std::string>& driveList) {
++                    if (ec2)
++                    {
++                        if (ec2.value() != EBADR)
++                        {
++                            BMCWEB_LOG_ERROR("DBUS response error {}",
++                                             ec2.value());
++                            messages::internalError(asyncResp->res);
++                        }
++                        return;
++                    }
++
++                    nlohmann::json::array_t drives;
++                    for (const std::string& drivePath : driveList)
++                    {
++                        std::string id =
++                            sdbusplus::message::object_path(drivePath)
++                                .filename();
++                        if (id.empty())
++                        {
++                            continue;
++                        }
++
++                        nlohmann::json::object_t drive;
++                        drive["@odata.id"] = boost::urls::format(
++                            "/redfish/v1/Systems/{}/Storage/{}/Drives/{}",
++                            BMCWEB_REDFISH_SYSTEM_URI_NAME, storageId, id);
++                        drives.emplace_back(std::move(drive));
++                    }
++                    asyncResp->res.jsonValue["Drives@odata.count"] =
++                        drives.size();
++                    asyncResp->res.jsonValue["Drives"] = std::move(drives);
++                });
++        });
+ }
+ 
+ inline void handleSystemsStorageGet(
+@@ -721,6 +824,141 @@ inline void handleSystemsStorageDriveGet(
+                         driveId));
+ }
+ 
++inline void getValidDrivePath(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& storagePath, const std::string& driveId,
++    const std::function<void(const std::string& drivePath)>& callback)
++{
++    static constexpr std::array<std::string_view, 1> driveInterface = {
++        "xyz.openbmc_project.Inventory.Item.Drive"};
++    dbus::utility::getAssociatedSubTree(
++        storagePath + "/provides_storage",
++        sdbusplus::message::object_path("/xyz/openbmc_project/inventory"), 0,
++        driveInterface,
++        [asyncResp, callback = std::move(callback),
++         driveId](const boost::system::error_code& ec,
++                  const dbus::utility::MapperGetSubTreeResponse& subtree) {
++            if (ec)
++            {
++                BMCWEB_LOG_ERROR("DBUS response error for Subtree {}",
++                                 ec.value());
++                messages::internalError(asyncResp->res);
++            }
++
++            if (subtree.empty())
++            {
++                BMCWEB_LOG_DEBUG("DBUS response error");
++                return;
++            }
++
++            for (const auto& [drivePath, serviceMaps] : subtree)
++            {
++                std::string driveName =
++                    sdbusplus::message::object_path(drivePath).filename();
++
++                if (driveId == driveName)
++                {
++                    callback(drivePath);
++                    return;
++                }
++            }
++
++            BMCWEB_LOG_ERROR("Invalid Drive path {}", driveId);
++            messages::resourceNotFound(asyncResp->res, "Drive", driveId);
++        });
++}
++
++inline void addDriveCommonProperties(crow::Response& resp,
++                                     const std::string& storageId,
++                                     const std::string& driveId)
++{
++    resp.jsonValue["@odata.type"] = "#Drive.v1_7_0.Drive";
++    resp.jsonValue["@odata.id"] =
++        boost::urls::format("/redfish/v1/Systems/{}/Storage/{}/Drives/{}",
++                            BMCWEB_REDFISH_SYSTEM_URI_NAME, storageId, driveId);
++    resp.jsonValue["Name"] = "Drive";
++    resp.jsonValue["Id"] = driveId;
++    // Default it to Enabled
++    resp.jsonValue["Status"]["State"] = resource::State::Enabled;
++}
++
++inline void getDriveFunction(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& storageId, const std::string& drivePath)
++{
++    auto found = drivePath.find_last_of("/");
++    std::string functionPath = drivePath.substr(0, found);
++
++    std::string functionName =
++        sdbusplus::message::object_path(functionPath).filename();
++
++    // Check if the parent of driveId is /{path}/Function#
++    size_t pos = functionName.find("Function");
++    if (pos == std::string::npos)
++    {
++        // Not found
++        messages::resourceNotFound(asyncResp->res, "Function", drivePath);
++        return;
++    }
++
++    // Limitation: assume that Storage ID and PCIe Device ID is the same
++    nlohmann::json::array_t functions;
++    nlohmann::json::object_t function;
++    function["@odata.id"] = boost::urls::format(
++        "/redfish/v1/Systems/{}/PCIeDevices/{}/PCIeFunctions/{}",
++        BMCWEB_REDFISH_SYSTEM_URI_NAME, storageId, functionName);
++    functions.emplace_back(std::move(function));
++    // Link to PCIe Function
++    asyncResp->res.jsonValue["Links"]["PCIeFunctions@odata.count"] =
++        functions.size();
++    asyncResp->res.jsonValue["Links"]["PCIeFunctions"] = std::move(functions);
++}
++
++inline void handleSystemsStorageDriveGetById(
++    App& app, const crow::Request& req,
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& systemName, const std::string& storageId,
++    const std::string& driveId)
++{
++    if (!redfish::setUpRedfishRoute(app, req, asyncResp))
++    {
++        return;
++    }
++    if constexpr (BMCWEB_EXPERIMENTAL_REDFISH_MULTI_COMPUTER_SYSTEM)
++    {
++        // Option currently returns no systems.  TBD
++        messages::resourceNotFound(asyncResp->res, "ComputerSystem",
++                                   systemName);
++        return;
++    }
++
++    if (systemName != BMCWEB_REDFISH_SYSTEM_URI_NAME)
++    {
++        messages::resourceNotFound(asyncResp->res, "ComputerSystem",
++                                   systemName);
++        return;
++    }
++
++    getValidStoragePath(
++        storageId, asyncResp,
++        [asyncResp, storageId,
++         driveId](const std::string& storagePath, const std::string& service) {
++            getValidDrivePath(
++                asyncResp, storagePath, driveId,
++                [asyncResp, storageId, driveId, storagePath,
++                 service](const std::string& drivePath) {
++                    addDriveCommonProperties(asyncResp->res, storageId,
++                                             driveId);
++                    // SMBIOS Type 128: Model, PartNumber, SerialNumber
++                    getDriveAsset(asyncResp, service, storagePath);
++                    // Drive: CapacityBytes, MediaType
++                    getDriveItemProperties(asyncResp, service, drivePath);
++                    // Link to PCIe Function
++                    getDriveFunction(asyncResp, storageId, drivePath);
++                });
++        });
++}
++
+ inline void requestRoutesDrive(App& app)
+ {
+     BMCWEB_ROUTE(app, "/redfish/v1/Systems/<str>/Storage/1/Drives/<str>/")
+@@ -729,6 +967,14 @@ inline void requestRoutesDrive(App& app)
+             std::bind_front(handleSystemsStorageDriveGet, std::ref(app)));
+ }
+ 
++inline void requestRoutesDriveById(App& app)
++{
++    BMCWEB_ROUTE(app, "/redfish/v1/Systems/<str>/Storage/<str>/Drives/<str>/")
++        .privileges(redfish::privileges::getDrive)
++        .methods(boost::beast::http::verb::get)(
++            std::bind_front(handleSystemsStorageDriveGetById, std::ref(app)));
++}
++
+ inline void afterChassisDriveCollectionSubtreeGet(
+     const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
+     const std::string& chassisId, const boost::system::error_code& ec,
+diff --git a/redfish-core/src/redfish.cpp b/redfish-core/src/redfish.cpp
+index 344047c0..1a98058c 100644
+--- a/redfish-core/src/redfish.cpp
++++ b/redfish-core/src/redfish.cpp
+@@ -110,7 +110,8 @@ RedfishService::RedfishService(App& app)
+     requestRoutesStorage(app);
+     requestRoutesStorageControllerCollection(app);
+     requestRoutesStorageController(app);
+-    requestRoutesDrive(app);
++    // requestRoutesDrive(app);
++    requestRoutesDriveById(app);
+     requestRoutesCable(app);
+     requestRoutesCableCollection(app);
+ 
+-- 
+2.43.0
+
