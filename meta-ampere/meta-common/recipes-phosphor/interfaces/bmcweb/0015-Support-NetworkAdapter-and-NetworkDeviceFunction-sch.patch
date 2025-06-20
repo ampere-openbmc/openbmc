@@ -1,0 +1,883 @@
+From f634b34784ff9d9d5124a4497974578a042e8fe4 Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Tue, 17 Jun 2025 06:58:56 +0700
+Subject: [PATCH] Support NetworkAdapter and NetworkDeviceFunction schema
+
+Tested:
+
+1. Get the NetworkAdapterCollection at
+ /redfish/v1/Chassis/Mt_Mitchell_Motherboard/NetworkAdapters
+
+2. List of NetworkAdapter of Mt_Mitchell_Motherboard is shown
+```
+{
+  "@odata.id": "/redfish/v1/Chassis/Mt_Mitchell_Motherboard/NetworkAdapters",
+  "@odata.type": "#NetworkAdapterCollection.NetworkAdapterCollection",
+  "Description": "The collection of Network Adapter resource instances.",
+  "Members": [
+  {
+    "@odata.id": "/redfish/v1/Chassis/Mt_Mitchell_Motherboard/NetworkAdapters/pciedevice6"
+  }
+  ],
+  "Members@odata.count": 1,
+  "Name": "Network Adapter Collection"
+}
+```
+
+3. Get the NetworkAdapter item at
+/redfish/v1/Chassis/Mt_Mitchell_Motherboard/NetworkAdapters/pciedevice6
+
+4. The NetworkAdapter information are shown as
+```
+{
+  "@odata.id": "/redfish/v1/Chassis/Mt_Mitchell_Motherboard/NetworkAdapters/pciedevice6",
+  "@odata.type": "#NetworkAdapter.v1_11_0.NetworkAdapter",
+  "Controllers": {
+  "Links": {
+  "NetworkDeviceFunctions": [
+    {
+      "@odata.id": "/redfish/v1/Chassis/Mt_Mitchell_Motherboard/NetworkAdapters/pciedevice6/NetworkDeviceFunctions/NetworkInterface0"
+    },
+    {
+      "@odata.id": "/redfish/v1/Chassis/Mt_Mitchell_Motherboard/NetworkAdapters/pciedevice6/NetworkDeviceFunctions/NetworkInterface1"
+    }
+  ],
+  "NetworkDeviceFunctions@odata.count": 2,
+  "PCIeDevices": [
+    {
+      "@odata.id": "/redfish/v1/Systems/system/PCIeDevices/pciedevice6"
+    }
+  ],
+  "PCIeDevices@odata.count": 1
+  }
+},
+"Id": "pciedevice6",
+"Model": "ConnectX-6 Dx EN adapter card, 100GbE, OCP3.0, With Host manage",
+"Name": "Network Adapter",
+"PartNumber": "MCX623436AN-CDAB",
+"SerialNumber": "MT2213T02793"
+}
+```
+
+5. Get NetworkDeviceFunctionCollection at
+```
+/redfish/v1/Chassis/Mt_Mitchell_Motherboard/NetworkAdapters/pciedevice6/NetworkDeviceFunctions
+```
+
+6. The NetworkDeviceFunctionCollection information are shown
+```
+{
+  "@odata.id": "/redfish/v1/Chassis/Mt_Mitchell_Motherboard/NetworkAdapters/pciedevice6/NetwokDeviceFunctions",
+  "@odata.type": "#NetwokDeviceFunctionCollection.NetwokDeviceFunctionCollection",
+  "Description": "The collection of Network Device Function resource instances.",
+  "Members": [
+    {
+      "@odata.id": "/redfish/v1/Chassis/Mt_Mitchell_Motherboard/NetworkAdapters/pciedevice6/NetworkDeviceFunctions/NetworkInterface0"
+    },
+    {
+      "@odata.id": "/redfish/v1/Chassis/Mt_Mitchell_Motherboard/NetworkAdapters/pciedevice6/NetworkDeviceFunctions/NetworkInterface1"
+    }
+  ],
+  "Members@odata.count": 2,
+  "Name": "Network Adapter Collection"
+}
+```
+
+7. Get NetworkDeviceFunction item at
+```
+/redfish/v1/Chassis/Mt_Mitchell_Motherboard/NetworkAdapters/pciedevice6/NetworkDeviceFunctions/NetworkInterface0
+```
+
+8. The NetworkDeviceFunction information are shown as
+```
+{
+  "@odata.id": "/redfish/v1/Chassis/Mt_Mitchell_Motherboard/NetworkAdapters/pciedevice6/NetworkDeviceFunctions/NetworkInterface0",
+  "@odata.type": "#NetworkDeviceFunction.v1_10_0.NetworkDeviceFunction",
+  "Ethernet": {
+    "MACAddress": "10:70:FD:76:60:48"
+  },
+  "Id": "NetworkInterface0",
+  "Links": {
+    "PCIeFunctions": [
+    {
+      "@odata.id": "/redfish/v1/Systems/system/PCIeDevices/pciedevice6/PCIeFunctions/Function0"
+    }
+    ],
+    "PCIeFunctions@odata.count": 1
+  },
+  "Name": "Network Device Function"
+}
+```
+
+Upstream-Status: Pending
+
+Change-Id: If6cb9bdf9c33e9a47cdf1bb04271cb829b47fd70
+Signed-off-by: Thang Tran <thuutran@amperecomputing.com>
+---
+ redfish-core/lib/chassis.hpp         |   5 +
+ redfish-core/lib/network_adapter.hpp | 715 +++++++++++++++++++++++++++
+ redfish-core/src/redfish.cpp         |   6 +
+ 3 files changed, 726 insertions(+)
+ create mode 100644 redfish-core/lib/network_adapter.hpp
+
+diff --git a/redfish-core/lib/chassis.hpp b/redfish-core/lib/chassis.hpp
+index 9e7da207..b5c42d8b 100644
+--- a/redfish-core/lib/chassis.hpp
++++ b/redfish-core/lib/chassis.hpp
+@@ -631,6 +631,11 @@ inline void handleDecoratorAssetProperties(
+             boost::urls::format("/redfish/v1/Chassis/{}/EnvironmentMetrics",
+                                 chassisId);
+     }
++
++    asyncResp->res.jsonValue["NetworkAdapters"]["@odata.id"] =
++        boost::urls::format("/redfish/v1/Chassis/{}/NetworkAdapters",
++                            chassisId);
++
+     // SensorCollection
+     asyncResp->res.jsonValue["Sensors"]["@odata.id"] =
+         boost::urls::format("/redfish/v1/Chassis/{}/Sensors", chassisId);
+diff --git a/redfish-core/lib/network_adapter.hpp b/redfish-core/lib/network_adapter.hpp
+new file mode 100644
+index 00000000..b5906616
+--- /dev/null
++++ b/redfish-core/lib/network_adapter.hpp
+@@ -0,0 +1,715 @@
++// SPDX-License-Identifier: Apache-2.0
++// SPDX-FileCopyrightText: Copyright OpenBMC Authors
++#pragma once
++
++#include "app.hpp"
++#include "async_resp.hpp"
++#include "dbus_utility.hpp"
++#include "error_messages.hpp"
++#include "http_request.hpp"
++#include "logging.hpp"
++#include "query.hpp"
++#include "registries/privilege_registry.hpp"
++#include "utils/dbus_utils.hpp"
++#include "utils/json_utils.hpp"
++
++#include <boost/beast/http/field.hpp>
++#include <boost/beast/http/status.hpp>
++#include <boost/beast/http/verb.hpp>
++#include <boost/system/error_code.hpp>
++#include <boost/url/format.hpp>
++#include <sdbusplus/message/native_types.hpp>
++
++#include <array>
++#include <functional>
++#include <string>
++#include <string_view>
++#include <tuple>
++#include <variant>
++#include <vector>
++
++namespace redfish
++{
++
++inline void doChassisNetworkAdapterCollection(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& chassisId,
++    const dbus::utility::MapperGetSubTreePathsResponse& networkAdapterPaths)
++{
++    asyncResp->res.addHeader(
++        boost::beast::http::field::link,
++        "</redfish/v1/JsonSchemas/NetworkAdapterCollection/NetworkAdapterCollection.json>; rel=describedby");
++    asyncResp->res.jsonValue["@odata.type"] =
++        "#NetworkAdapterCollection.NetworkAdapterCollection";
++    asyncResp->res.jsonValue["Name"] = "Network Adapter Collection";
++    asyncResp->res.jsonValue["@odata.id"] = boost::urls::format(
++        "/redfish/v1/Chassis/{}/NetworkAdapters", chassisId);
++    asyncResp->res.jsonValue["Description"] =
++        "The collection of Network Adapter resource instances.";
++    asyncResp->res.jsonValue["Members"] = nlohmann::json::array();
++    asyncResp->res.jsonValue["Members@odata.count"] = 0;
++
++    nlohmann::json& networkAdapterList = asyncResp->res.jsonValue["Members"];
++    for (const std::string& networkAdapterPath : networkAdapterPaths)
++    {
++        std::string networkAdapterName =
++            sdbusplus::message::object_path(networkAdapterPath).filename();
++        if (networkAdapterName.empty())
++        {
++            continue;
++        }
++
++        nlohmann::json item = nlohmann::json::object();
++        item["@odata.id"] =
++            boost::urls::format("/redfish/v1/Chassis/{}/NetworkAdapters/{}",
++                                chassisId, networkAdapterName);
++
++        networkAdapterList.emplace_back(std::move(item));
++    }
++    asyncResp->res.jsonValue["Members@odata.count"] = networkAdapterList.size();
++}
++
++inline void handleNetworkAdapterCollectionGet(
++    App& app, const crow::Request& req,
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& chassisId)
++{
++    if (!redfish::setUpRedfishRoute(app, req, asyncResp))
++    {
++        return;
++    }
++
++    const std::string reqpath = "/xyz/openbmc_project/inventory";
++    const std::vector<std::string_view> ethernetItf = {
++        "xyz.openbmc_project.Inventory.Item.Ethernet"};
++
++    // Get the list of PCIe device that includes "Item.Ethernet" interface
++    dbus::utility::getAssociatedSubTreePathsById(
++        chassisId, reqpath, chassisInterfaces, "containing", ethernetItf,
++        [asyncResp, chassisId](
++            const boost::system::error_code& ec,
++            const dbus::utility::MapperGetSubTreePathsResponse& subtreePaths) {
++            if (ec)
++            {
++                if (ec.value() == boost::system::errc::io_error)
++                {
++                    BMCWEB_LOG_WARNING("Chassis not found");
++                    messages::resourceNotFound(asyncResp->res, "Chassis",
++                                               chassisId);
++                    return;
++                }
++                if (ec.value() != EBADR)
++                {
++                    BMCWEB_LOG_ERROR("DBUS response error{}", ec.value());
++                    messages::internalError(asyncResp->res);
++                }
++                return;
++            }
++
++            doChassisNetworkAdapterCollection(asyncResp, chassisId,
++                                              subtreePaths);
++        });
++}
++
++inline void getNetworkAdapterAsset(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& service, const std::string& path)
++{
++    dbus::utility::getAllProperties(
++        service, path, "xyz.openbmc_project.Inventory.Decorator.Asset",
++        [asyncResp](const boost::system::error_code& ec,
++                    const dbus::utility::DBusPropertiesMap& propertiesList) {
++            if (ec)
++            {
++                if (ec.value() != EBADR)
++                {
++                    BMCWEB_LOG_ERROR("DBUS response error for Asset {}",
++                                     ec.value());
++                    messages::internalError(asyncResp->res);
++                }
++                return;
++            }
++
++            const std::string* partNumber = nullptr;
++            const std::string* serialNumber = nullptr;
++            const std::string* manufacturer = nullptr;
++            const std::string* model = nullptr;
++
++            const bool success = sdbusplus::unpackPropertiesNoThrow(
++                dbus_utils::UnpackErrorPrinter(), propertiesList, "PartNumber",
++                partNumber, "SerialNumber", serialNumber, "Manufacturer",
++                manufacturer, "Model", model);
++
++            if (!success)
++            {
++                messages::internalError(asyncResp->res);
++                return;
++            }
++
++            if (partNumber != nullptr)
++            {
++                asyncResp->res.jsonValue["PartNumber"] = *partNumber;
++            }
++
++            if (serialNumber != nullptr)
++            {
++                asyncResp->res.jsonValue["SerialNumber"] = *serialNumber;
++            }
++
++            if (model != nullptr)
++            {
++                asyncResp->res.jsonValue["Model"] = *model;
++            }
++        });
++}
++
++inline void getNetworkAdapterState(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& service, const std::string& path)
++{
++    dbus::utility::getProperty<bool>(
++        service, path, "xyz.openbmc_project.Inventory.Item", "Present",
++        [asyncResp](const boost::system::error_code& ec, const bool value) {
++            if (ec)
++            {
++                if (ec.value() != EBADR)
++                {
++                    BMCWEB_LOG_ERROR("DBUS response error for GetProperty {}",
++                                     ec.value());
++                    messages::internalError(asyncResp->res);
++                }
++                return;
++            }
++
++            if (!value)
++            {
++                asyncResp->res.jsonValue["Status"]["State"] =
++                    resource::State::Absent;
++            }
++            else
++            {
++                asyncResp->res.jsonValue["Status"]["State"] =
++                    resource::State::Enabled;
++            }
++        });
++}
++
++inline void addNetworkDeviceFunctionsLink(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& chassisId, const std::string& networkAdapterId,
++    const dbus::utility::MapperGetSubTreePathsResponse& networkDeviceFncPaths)
++{
++    nlohmann::json& controllerList = asyncResp->res.jsonValue["Controllers"];
++    controllerList = nlohmann::json::array();
++
++    nlohmann::json controllerItem;
++    nlohmann::json& linkItem = controllerItem["Links"];
++    nlohmann::json& networkDevFuncList = linkItem["NetworkDeviceFunctions"];
++    networkDevFuncList = nlohmann::json::array();
++    nlohmann::json& pcieDevList = linkItem["PCIeDevices"];
++    pcieDevList = nlohmann::json::array();
++
++    nlohmann::json pcieDevItem;
++    pcieDevItem["@odata.id"] = boost::urls::format(
++        "/redfish/v1/Systems/system/PCIeDevices/{}", networkAdapterId);
++    pcieDevList.emplace_back(std::move(pcieDevItem));
++    linkItem["PCIeDevices@odata.count"] = 1;
++
++    for (const std::string& networkDeviceFncPath : networkDeviceFncPaths)
++    {
++        std::string networkDeviceFncName =
++            sdbusplus::message::object_path(networkDeviceFncPath).filename();
++        if (networkDeviceFncName.empty())
++        {
++            continue;
++        }
++
++        nlohmann::json item = nlohmann::json::object();
++        item["@odata.id"] = boost::urls::format(
++            "/redfish/v1/Chassis/{}/NetworkAdapters/{}/NetworkDeviceFunctions/{}",
++            chassisId, networkAdapterId, networkDeviceFncName);
++
++        networkDevFuncList.emplace_back(std::move(item));
++    }
++
++    linkItem["NetworkDeviceFunctions@odata.count"] = networkDevFuncList.size();
++
++    controllerList.emplace_back(std::move(controllerItem));
++}
++
++inline void getNetworkDeviceFunctionsPaths(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& chassisId, const std::string& networkAdapterId,
++    std::function<
++        void(const dbus::utility::MapperGetSubTreePathsResponse& subtreePaths)>
++        callback)
++{
++    const std::string reqpath = "/xyz/openbmc_project/inventory";
++    const std::vector<std::string_view> networkItf = {
++        "xyz.openbmc_project.Inventory.Item.NetworkInterface"};
++    const std::vector<std::string_view> ethernetItf = {
++        "xyz.openbmc_project.Inventory.Item.Ethernet"};
++
++    dbus::utility::getAssociatedSubTreePathsById(
++        networkAdapterId, reqpath, ethernetItf, "containing", networkItf,
++        [asyncResp, chassisId, networkAdapterId, callback{std::move(callback)}](
++            const boost::system::error_code& ec,
++            const dbus::utility::MapperGetSubTreePathsResponse& subtreePaths) {
++            if (ec)
++            {
++                if (ec.value() == boost::system::errc::io_error)
++                {
++                    BMCWEB_LOG_WARNING("NetworkAdapter not found");
++                    messages::resourceNotFound(asyncResp->res, "NetworkAdapter",
++                                               networkAdapterId);
++                    return;
++                }
++                if (ec.value() != EBADR)
++                {
++                    BMCWEB_LOG_ERROR("DBUS response error{}", ec.value());
++                    messages::internalError(asyncResp->res);
++                }
++                return;
++            }
++
++            callback(subtreePaths);
++        });
++}
++
++inline void doNetworkAdapterGet(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& chassisId, const std::string& networkAdapterId,
++    const std::string& networkAdapterPath, const std::string& service)
++{
++    asyncResp->res.addHeader(
++        boost::beast::http::field::link,
++        "</redfish/v1/JsonSchemas/NetworkAdapter/NetworkAdapter.json>; rel=describedby");
++    asyncResp->res.jsonValue["@odata.type"] =
++        "#NetworkAdapter.v1_11_0.NetworkAdapter";
++    asyncResp->res.jsonValue["Name"] = "Network Adapter";
++    asyncResp->res.jsonValue["Id"] = networkAdapterId;
++    asyncResp->res.jsonValue["@odata.id"] =
++        boost::urls::format("/redfish/v1/Chassis/{}/NetworkAdapters/{}",
++                            chassisId, networkAdapterId);
++
++    asyncResp->res
++        .jsonValue["Controllers"]["Links"]["PCIeDevices@odata.count"] = 1;
++    asyncResp->res.jsonValue["NetworkDeviceFunctions"]["@odata.id"] =
++        boost::urls::format(
++            "/redfish/v1/Chassis/{}/NetworkAdapters/{}/NetworkDeviceFunctions",
++            chassisId, networkAdapterId);
++
++    getNetworkAdapterAsset(asyncResp, service, networkAdapterPath);
++    getNetworkAdapterState(asyncResp, service, networkAdapterPath);
++    getNetworkDeviceFunctionsPaths(
++        asyncResp, chassisId, networkAdapterId,
++        std::bind_front(addNetworkDeviceFunctionsLink, asyncResp, chassisId,
++                        networkAdapterId));
++}
++
++inline void getValidNetworkAdapterPath(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& chassisId, const std::string& networkAdapterId,
++    const std::function<void(const std::string& networkAdapterPath,
++                             const std::string& service)>& callback)
++{
++    const std::string reqpath = "/xyz/openbmc_project/inventory";
++    const std::vector<std::string_view> ethernetItf = {
++        "xyz.openbmc_project.Inventory.Item.Ethernet"};
++
++    dbus::utility::getAssociatedSubTreeById(
++        chassisId, reqpath, chassisInterfaces, "containing", ethernetItf,
++        [asyncResp, chassisId, networkAdapterId, callback{std::move(callback)}](
++            const boost::system::error_code& ec,
++            const dbus::utility::MapperGetSubTreeResponse&
++                networkAdapterPaths) {
++            if (ec)
++            {
++                if (ec.value() == boost::system::errc::io_error)
++                {
++                    BMCWEB_LOG_WARNING("Chassis not found");
++                    messages::resourceNotFound(asyncResp->res, "Chassis",
++                                               chassisId);
++                    return;
++                }
++                if (ec.value() != EBADR)
++                {
++                    BMCWEB_LOG_ERROR("DBUS response error{}", ec.value());
++                    messages::internalError(asyncResp->res);
++                }
++                return;
++            }
++
++            for (const auto& [objectPath, service] : networkAdapterPaths)
++            {
++                sdbusplus::message::object_path path(objectPath);
++                if (path.filename() == networkAdapterId)
++                {
++                    callback(path, service.begin()->first);
++                    return;
++                }
++            }
++
++            BMCWEB_LOG_WARNING("NetworkAdapter not found");
++            messages::resourceNotFound(asyncResp->res, "NetworkAdapter",
++                                       networkAdapterId);
++            return;
++        });
++}
++
++inline void handleNetworkAdapterGet(
++    App& app, const crow::Request& req,
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& chassisId, const std::string& networkAdapterId)
++{
++    if (!redfish::setUpRedfishRoute(app, req, asyncResp))
++    {
++        return;
++    }
++
++    getValidNetworkAdapterPath(asyncResp, chassisId, networkAdapterId,
++                               std::bind_front(doNetworkAdapterGet, asyncResp,
++                                               chassisId, networkAdapterId));
++}
++
++inline void showNetworkDeviceFunctionCollectionGet(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& chassisId, const std::string& networkAdapterId,
++    const dbus::utility::MapperGetSubTreePathsResponse& networkDeviceFuncPaths)
++{
++    asyncResp->res.addHeader(
++        boost::beast::http::field::link,
++        "</redfish/v1/JsonSchemas/NetworkDeviceFunctionCollection/NetworkDeviceFunctionCollection.json>; rel=describedby");
++    asyncResp->res.jsonValue["@odata.type"] =
++        "#NetworkDeviceFunctionCollection.NetworkDeviceFunctionCollection";
++    asyncResp->res.jsonValue["Name"] = "Network Adapter Collection";
++    asyncResp->res.jsonValue["@odata.id"] = boost::urls::format(
++        "/redfish/v1/Chassis/{}/NetworkAdapters/{}/NetworkDeviceFunctions",
++        chassisId, networkAdapterId);
++    asyncResp->res.jsonValue["Description"] =
++        "The collection of Network Device Function resource instances.";
++    asyncResp->res.jsonValue["Members"] = nlohmann::json::array();
++    asyncResp->res.jsonValue["Members@odata.count"] = 0;
++
++    nlohmann::json& networkDeviceFuncList = asyncResp->res.jsonValue["Members"];
++    for (const std::string& networkDeviceFuncPath : networkDeviceFuncPaths)
++    {
++        std::string networkDeviceFuncName =
++            sdbusplus::message::object_path(networkDeviceFuncPath).filename();
++        if (networkDeviceFuncName.empty())
++        {
++            continue;
++        }
++
++        nlohmann::json item = nlohmann::json::object();
++        item["@odata.id"] = boost::urls::format(
++            "/redfish/v1/Chassis/{}/NetworkAdapters/{}/NetworkDeviceFunctions/{}",
++            chassisId, networkAdapterId, networkDeviceFuncName);
++
++        networkDeviceFuncList.emplace_back(std::move(item));
++    }
++    asyncResp->res.jsonValue["Members@odata.count"] =
++        networkDeviceFuncList.size();
++}
++
++inline void doNetworkDeviceFunctionCollectionGet(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& chassisId, const std::string& networkAdapterId,
++    [[maybe_unused]] const std::string& networkAdapterPath,
++    [[maybe_unused]] const std::string& service)
++{
++    getNetworkDeviceFunctionsPaths(
++        asyncResp, chassisId, networkAdapterId,
++        std::bind_front(showNetworkDeviceFunctionCollectionGet, asyncResp,
++                        chassisId, networkAdapterId));
++}
++
++inline void handleNetworkDeviceFunctionCollectionGet(
++    App& app, const crow::Request& req,
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& chassisId, const std::string& networkAdapterId)
++{
++    if (!redfish::setUpRedfishRoute(app, req, asyncResp))
++    {
++        return;
++    }
++    getValidNetworkAdapterPath(
++        asyncResp, chassisId, networkAdapterId,
++        std::bind_front(doNetworkDeviceFunctionCollectionGet, asyncResp,
++                        chassisId, networkAdapterId));
++}
++
++inline void getNetworkDeviceFunctionState(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& networkDeviceFuncPath, const std::string& service)
++{
++    dbus::utility::getProperty<bool>(
++        service, networkDeviceFuncPath, "xyz.openbmc_project.Inventory.Item",
++        "Present",
++        [asyncResp](const boost::system::error_code& ec, const bool value) {
++            if (ec)
++            {
++                if (ec.value() != EBADR)
++                {
++                    BMCWEB_LOG_ERROR("DBUS response error for GetProperty {}",
++                                     ec.value());
++                    messages::internalError(asyncResp->res);
++                }
++                return;
++            }
++
++            if (!value)
++            {
++                asyncResp->res.jsonValue["Status"]["State"] =
++                    resource::State::Absent;
++            }
++            else
++            {
++                asyncResp->res.jsonValue["Status"]["State"] =
++                    resource::State::Enabled;
++            }
++        });
++}
++
++inline void getNetworkDeviceFunctionMacAddress(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& networkDeviceFuncPath, const std::string& service)
++{
++    dbus::utility::getProperty<std::string>(
++        service, networkDeviceFuncPath,
++        "xyz.openbmc_project.Inventory.Item.NetworkInterface", "MACAddress",
++        [asyncResp](const boost::system::error_code& ec,
++                    const std::string value) {
++            if (ec)
++            {
++                if (ec.value() != EBADR)
++                {
++                    BMCWEB_LOG_ERROR("DBUS response error for GetProperty {}",
++                                     ec.value());
++                    messages::internalError(asyncResp->res);
++                }
++                return;
++            }
++
++            asyncResp->res.jsonValue["Ethernet"]["MACAddress"] = value;
++        });
++}
++
++inline void showPCIeFunctionLink(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    [[maybe_unused]] const std::string& chassisId,
++    const std::string& networkAdapterId,
++    [[maybe_unused]] const std::string& networkDeviceFuncId,
++    const dbus::utility::MapperGetSubTreePathsResponse& pcieFunctionPaths)
++{
++    for (const std::string& pcieFunctionPath : pcieFunctionPaths)
++    {
++        std::string pcieFunctionName =
++            sdbusplus::message::object_path(pcieFunctionPath).filename();
++        if (pcieFunctionName.empty())
++        {
++            continue;
++        }
++
++        asyncResp->res.jsonValue["Links"]["PCIeFunction"]["@odata.id"] = boost::urls::format(
++            "/redfish/v1/Systems/system/PCIeDevices/{}/PCIeFunctions/{}",
++            networkAdapterId, pcieFunctionName);
++        break;
++    }
++}
++
++inline void geFunctionPCIeFuncPaths(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& chassisId, const std::string& networkAdapterId,
++    const std::string& networkDeviceFuncId,
++    std::function<
++        void(const dbus::utility::MapperGetSubTreePathsResponse& subtreePaths)>
++        callback)
++{
++    const std::string reqpath = "/xyz/openbmc_project/inventory";
++    const std::vector<std::string_view> networkItf = {
++        "xyz.openbmc_project.Inventory.Item.NetworkInterface"};
++    const std::vector<std::string_view> pcieFunctionItf = {
++        "xyz.openbmc_project.Inventory.Item.PCIeFunction"};
++
++    dbus::utility::getAssociatedSubTreePathsById(
++        networkDeviceFuncId, reqpath, networkItf, "produced_by",
++        pcieFunctionItf,
++        [asyncResp, chassisId, networkAdapterId, networkDeviceFuncId,
++         callback{std::move(callback)}](
++            const boost::system::error_code& ec,
++            const dbus::utility::MapperGetSubTreePathsResponse&
++                pcieFunctionPaths) {
++            if (ec)
++            {
++                if (ec.value() == boost::system::errc::io_error)
++                {
++                    BMCWEB_LOG_WARNING("NetworkDeviceFuncId not found");
++                    messages::resourceNotFound(asyncResp->res,
++                                               "NetworkDeviceFuncId",
++                                               networkDeviceFuncId);
++                    return;
++                }
++                if (ec.value() != EBADR)
++                {
++                    BMCWEB_LOG_ERROR("DBUS response error{}", ec.value());
++                    messages::internalError(asyncResp->res);
++                }
++                return;
++            }
++
++            callback(pcieFunctionPaths);
++        });
++}
++
++inline void showNetworkDeviceFuncGet(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& chassisId, const std::string& networkAdapterId,
++    const std::string& networkDeviceFuncId,
++    const std::string& networkDeviceFuncPath, const std::string& service)
++{
++    asyncResp->res.addHeader(
++        boost::beast::http::field::link,
++        "</redfish/v1/JsonSchemas/NetworkDeviceFunction/NetworkDeviceFunction.json>; rel=describedby");
++    asyncResp->res.jsonValue["@odata.type"] =
++        "#NetworkDeviceFunction.v1_10_0.NetworkDeviceFunction";
++    asyncResp->res.jsonValue["Name"] = "Network Device Function";
++    asyncResp->res.jsonValue["Id"] = networkDeviceFuncId;
++    asyncResp->res.jsonValue["@odata.id"] = boost::urls::format(
++        "/redfish/v1/Chassis/{}/NetworkAdapters/{}/NetworkDeviceFunctions/{}",
++        chassisId, networkAdapterId, networkDeviceFuncId);
++
++    getNetworkDeviceFunctionMacAddress(asyncResp, networkDeviceFuncPath,
++                                       service);
++    getNetworkDeviceFunctionState(asyncResp, networkDeviceFuncPath, service);
++    geFunctionPCIeFuncPaths(
++        asyncResp, chassisId, networkAdapterId, networkDeviceFuncId,
++        std::bind_front(showPCIeFunctionLink, asyncResp, chassisId,
++                        networkAdapterId, networkDeviceFuncId));
++}
++
++inline void getValidNetworkDeviceFuncPath(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& chassisId, const std::string& networkAdapterId,
++    const std::string& networkDeviceFuncId,
++    std::function<void(const std::string& NetworkDeviceFuncPath,
++                       const std::string& service)>
++        callback)
++{
++    const std::string reqpath = "/xyz/openbmc_project/inventory";
++    const std::vector<std::string_view> networkDeviceFuncItf = {
++        "xyz.openbmc_project.Inventory.Item.NetworkInterface"};
++    const std::vector<std::string_view> ethernetItf = {
++        "xyz.openbmc_project.Inventory.Item.Ethernet"};
++
++    // Get the list of PCIe device that includes "Item.Ethernet" interface
++    dbus::utility::getAssociatedSubTreeById(
++        networkAdapterId, reqpath, ethernetItf, "containing",
++        networkDeviceFuncItf,
++        [asyncResp, chassisId, networkAdapterId, networkDeviceFuncId,
++         callback{std::move(callback)}](
++            const boost::system::error_code& ec,
++            const dbus::utility::MapperGetSubTreeResponse&
++                NetworkDeviceFuncObjctPaths) {
++            if (ec)
++            {
++                if (ec.value() == boost::system::errc::io_error)
++                {
++                    BMCWEB_LOG_WARNING("NetworkAdapter not found");
++                    messages::resourceNotFound(asyncResp->res, "NetworkAdapter",
++                                               networkAdapterId);
++                    return;
++                }
++                if (ec.value() != EBADR)
++                {
++                    BMCWEB_LOG_ERROR("DBUS response error{}", ec.value());
++                    messages::internalError(asyncResp->res);
++                }
++                return;
++            }
++
++            for (const auto& [objectPath, service] :
++                 NetworkDeviceFuncObjctPaths)
++            {
++                sdbusplus::message::object_path path(objectPath);
++                if (path.filename() == networkDeviceFuncId)
++                {
++                    callback(path, service.begin()->first);
++                    return;
++                }
++            }
++
++            BMCWEB_LOG_WARNING("NetworkDeviceFunction not found");
++            messages::resourceNotFound(asyncResp->res, "NetworkDeviceFunction",
++                                       networkDeviceFuncId);
++            return;
++        });
++}
++
++inline void doNetworkDeviceFunctionGet(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& chassisId, const std::string& networkAdapterId,
++    const std::string& networkDeviceFuncId,
++    [[maybe_unused]] const std::string& networkAdapterPath,
++    [[maybe_unused]] const std::string& service)
++{
++    getValidNetworkDeviceFuncPath(
++        asyncResp, chassisId, networkAdapterId, networkDeviceFuncId,
++        std::bind_front(showNetworkDeviceFuncGet, asyncResp, chassisId,
++                        networkAdapterId, networkDeviceFuncId));
++}
++
++inline void handleNetworkDeviceFunctionGet(
++    App& app, const crow::Request& req,
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& chassisId, const std::string& networkAdapterId,
++    const std::string& networkDeviceFuncId)
++{
++    if (!redfish::setUpRedfishRoute(app, req, asyncResp))
++    {
++        return;
++    }
++
++    getValidNetworkAdapterPath(
++        asyncResp, chassisId, networkAdapterId,
++        std::bind_front(doNetworkDeviceFunctionGet, asyncResp, chassisId,
++                        networkAdapterId, networkDeviceFuncId));
++}
++
++inline void requestRoutesChassisNetworkAdapterCollection(App& app)
++{
++    BMCWEB_ROUTE(app, "/redfish/v1/Chassis/<str>/NetworkAdapters/")
++        .privileges(redfish::privileges::getNetworkAdapterCollection)
++        .methods(boost::beast::http::verb::get)(
++            std::bind_front(handleNetworkAdapterCollectionGet, std::ref(app)));
++}
++
++inline void requestRoutesChassisNetworkAdapter(App& app)
++{
++    BMCWEB_ROUTE(app, "/redfish/v1/Chassis/<str>/NetworkAdapters/<str>/")
++        .privileges(redfish::privileges::getNetworkAdapter)
++        .methods(boost::beast::http::verb::get)(
++            std::bind_front(handleNetworkAdapterGet, std::ref(app)));
++}
++
++inline void requestRoutesChassisNetworkDeviceFunctionCollection(App& app)
++{
++    BMCWEB_ROUTE(
++        app,
++        "/redfish/v1/Chassis/<str>/NetworkAdapters/<str>/NetworkDeviceFunctions")
++        .privileges(redfish::privileges::getNetworkDeviceFunctionCollection)
++        .methods(boost::beast::http::verb::get)(std::bind_front(
++            handleNetworkDeviceFunctionCollectionGet, std::ref(app)));
++}
++
++inline void requestRoutesChassisNetworkDeviceFunction(App& app)
++{
++    BMCWEB_ROUTE(
++        app,
++        "/redfish/v1/Chassis/<str>/NetworkAdapters/<str>/NetworkDeviceFunctions/<str>")
++        .privileges(redfish::privileges::getNetworkDeviceFunction)
++        .methods(boost::beast::http::verb::get)(
++            std::bind_front(handleNetworkDeviceFunctionGet, std::ref(app)));
++}
++
++} // namespace redfish
+diff --git a/redfish-core/src/redfish.cpp b/redfish-core/src/redfish.cpp
+index 1a98058c..6612a2be 100644
+--- a/redfish-core/src/redfish.cpp
++++ b/redfish-core/src/redfish.cpp
+@@ -28,6 +28,7 @@
+ #include "metadata.hpp"
+ #include "metric_report.hpp"
+ #include "metric_report_definition.hpp"
++#include "network_adapter.hpp"
+ #include "network_protocol.hpp"
+ #include "odata.hpp"
+ #include "openbmc/openbmc_managers.hpp"
+@@ -237,6 +238,11 @@ RedfishService::RedfishService(App& app)
+     requestRoutesTriggerCollection(app);
+     requestRoutesTrigger(app);
+ 
++    requestRoutesChassisNetworkAdapterCollection(app);
++    requestRoutesChassisNetworkAdapter(app);
++    requestRoutesChassisNetworkDeviceFunctionCollection(app);
++    requestRoutesChassisNetworkDeviceFunction(app);
++
+     // Note, this must be the last route registered
+     requestRoutesRedfish(app);
+ 
