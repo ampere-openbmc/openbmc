@@ -1,0 +1,245 @@
+From 446184e223799f55b970752c6262f3fe0ed43069 Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Sun, 22 Jun 2025 03:31:58 +0000
+Subject: [PATCH] Support to link from PCieFunction to NetworkDeviceFunctions
+
+This commit supports the links from PCIe Network Device Function to
+NetworkDeviceFunctions.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ redfish-core/lib/pcie.hpp | 177 ++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 169 insertions(+), 8 deletions(-)
+
+diff --git a/redfish-core/lib/pcie.hpp b/redfish-core/lib/pcie.hpp
+index f79f68d5..07446a44 100644
+--- a/redfish-core/lib/pcie.hpp
++++ b/redfish-core/lib/pcie.hpp
+@@ -923,9 +923,9 @@ inline void addPCIeFunctionProperties(
+     }
+ }
+ 
+-inline void getPcieFunctionAssociation(
+-    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
+-    const std::string& pcieDevicePath, const std::string& pcieDeviceId)
++inline void getDrivesLink(const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++                          const std::string& pcieDevicePath,
++                          const std::string& pcieDeviceId)
+ {
+     dbus::utility::getProperty<std::vector<std::string>>(
+         "xyz.openbmc_project.ObjectMapper",
+@@ -965,6 +965,125 @@ inline void getPcieFunctionAssociation(
+         });
+ }
+ 
++inline void getChassisId(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& service, const std::string& pcieDevicePath,
++    const std::function<void(const std::string& chassisId)>& callback)
++{
++    using Association = std::tuple<std::string, std::string, std::string>;
++    using Associations = std::vector<Association>;
++    dbus::utility::getProperty<Associations>(
++        service, pcieDevicePath, "xyz.openbmc_project.Association.Definitions",
++        "Associations",
++        [asyncResp,
++         callback = std::move(callback)](const boost::system::error_code& ec,
++                                         const Associations& associations) {
++            if (ec)
++            {
++                if (ec.value() != EBADR)
++                {
++                    BMCWEB_LOG_ERROR("DBUS response error {}", ec.value());
++                }
++                return;
++            }
++
++            std::string chassisPath;
++            for (const auto& assoc : associations)
++            {
++                if (std::get<0>(assoc) == "chassis" &&
++                    std::get<1>(assoc) == "pcie_devices")
++                {
++                    chassisPath = std::get<2>(assoc);
++                    std::string chassisId =
++                        sdbusplus::message::object_path(chassisPath).filename();
++                    callback(chassisId);
++                    return;
++                }
++            }
++        });
++}
++
++inline void getNetworkLink(const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++                           const std::string& pcieDevicePath,
++                           const std::string& pcieDeviceId,
++                           uint64_t pcieFunctionId, const std::string& service)
++{
++    getChassisId(
++        asyncResp, service, pcieDevicePath,
++        [asyncResp, pcieDeviceId, pcieFunctionId,
++         pcieDevicePath](const std::string& chassisId) {
++            dbus::utility::getProperty<std::vector<std::string>>(
++                "xyz.openbmc_project.ObjectMapper",
++                pcieDevicePath + "/provides_network",
++                "xyz.openbmc_project.Association", "endpoints",
++                [asyncResp, chassisId, pcieDeviceId, pcieFunctionId](
++                    const boost::system::error_code& ec,
++                    const std::vector<std::string>& networkInterfacePaths) {
++                    std::string pcieFunctionIdStr =
++                        "Function" + std::to_string(pcieFunctionId);
++                    if (ec)
++                    {
++                        if (ec.value() != EBADR)
++                        {
++                            BMCWEB_LOG_ERROR("DBUS response error {}",
++                                             ec.value());
++                            messages::internalError(asyncResp->res);
++                        }
++                        return;
++                    }
++
++                    for (const std::string& networkInterfacePath :
++                         networkInterfacePaths)
++                    {
++                        auto found = networkInterfacePath.find_last_of("/");
++                        std::string networkInterfaceFunctionPath =
++                            networkInterfacePath.substr(0, found);
++
++                        std::string networkInterfaceFunction =
++                            sdbusplus::message::object_path(
++                                networkInterfaceFunctionPath)
++                                .filename();
++
++                        // Check if the parent of NetworkInterfaceId is
++                        // /{path}/Function#
++                        size_t pos = networkInterfaceFunction.find("Function");
++                        if (pos == std::string::npos)
++                        {
++                            // Not found
++                            messages::resourceNotFound(
++                                asyncResp->res, "NetworkInterface",
++                                networkInterfaceFunction);
++                            return;
++                        }
++
++                        if (networkInterfaceFunction == pcieFunctionIdStr)
++                        {
++                            std::string networkInterfaceId =
++                                sdbusplus::message::object_path(
++                                    networkInterfacePath)
++                                    .filename();
++                            nlohmann::json::array_t networkInterfaces;
++                            nlohmann::json::object_t networkInf;
++                            networkInf["@odata.id"] = boost::urls::format(
++                                "/redfish/v1/Chassis/{}/NetworkAdapters/{}/NetworkDeviceFunctions/{}",
++                                chassisId, pcieDeviceId, networkInterfaceId);
++                            networkInterfaces.emplace_back(
++                                std::move(networkInf));
++                            // Link to NetworkDeviceFunctions
++                            asyncResp->res.jsonValue
++                                ["Links"]
++                                ["NetworkDeviceFunctions@odata.count"] =
++                                networkInterfaces.size();
++                            asyncResp->res
++                                .jsonValue["Links"]["NetworkDeviceFunctions"] =
++                                std::move(networkInterfaces);
++                            return;
++                        }
++                    }
++                });
++        });
++}
++
+ inline void addPCIeFunctionCommonProperties(crow::Response& resp,
+                                             const std::string& pcieDeviceId,
+                                             uint64_t pcieFunctionId)
+@@ -988,12 +1107,13 @@ inline void addPCIeFunctionCommonProperties(crow::Response& resp,
+ 
+ inline void getPCIeFunctionPropertiesFromFunctionDbus(
+     const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
+-    const std::string& pcieFunctionPath, const std::string& service)
++    const std::string& pcieFunctionPath, const std::string& service,
++    const std::function<void(uint8_t baseClassCode)>& callback)
+ {
+     dbus::utility::getAllProperties(
+         service, pcieFunctionPath,
+         "xyz.openbmc_project.Inventory.Item.PCIeFunction",
+-        [asyncResp{asyncResp}](
++        [asyncResp{asyncResp}, callback = std::move(callback)](
+             const boost::system::error_code& ec,
+             const dbus::utility::DBusPropertiesMap& functionList) {
+             if (ec)
+@@ -1066,6 +1186,7 @@ inline void getPCIeFunctionPropertiesFromFunctionDbus(
+                     asyncResp->res.jsonValue["DeviceClass"] =
+                         *redfishDeviceClass;
+                 }
++                callback(*baseClassCode);
+             }
+             // Class Code in the PCI Configuration space has 3 bytes such as
+             // Class Code, SubClass Code, and PIFClass Code.
+@@ -1144,6 +1265,42 @@ inline void getValidPcieFunctionPath(
+         });
+ }
+ 
++inline void getFunctionLink(const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++                            const std::string& service,
++                            const std::string& pcieDevicePath,
++                            const std::string& pcieDeviceId,
++                            uint64_t pcieFunctionId, uint8_t baseClassCode)
++{
++    const std::map<pcie_function::DeviceClass, std::function<void()>>
++        deviceClassActions = {
++            {pcie_function::DeviceClass::MassStorageController,
++             [&]() { getDrivesLink(asyncResp, pcieDevicePath, pcieDeviceId); }},
++            {pcie_function::DeviceClass::NetworkController,
++             [&]() {
++                 getNetworkLink(asyncResp, pcieDevicePath, pcieDeviceId,
++                                pcieFunctionId, service);
++             }},
++            {pcie_function::DeviceClass::MemoryController,
++             []() { /* TODO: Get CXLLogicalDevice Link */ }}};
++
++    auto it = redfish::pcie_util::deviceClassCodeMap.find(baseClassCode);
++    if (it == redfish::pcie_util::deviceClassCodeMap.end())
++    {
++        BMCWEB_LOG_ERROR("Invalid Base Class Code");
++        return;
++    }
++
++    auto actionIt = deviceClassActions.find(it->second);
++    if (actionIt != deviceClassActions.end())
++    {
++        actionIt->second();
++    }
++    else
++    {
++        BMCWEB_LOG_ERROR("Invalid Base Class Code");
++    }
++}
++
+ inline void handlePCIeFunctionGet(
+     App& app, const crow::Request& req,
+     const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
+@@ -1205,9 +1362,13 @@ inline void handlePCIeFunctionGet(
+                                                       pcieDevProperties);
+                         });
+                     getPCIeFunctionPropertiesFromFunctionDbus(
+-                        asyncResp, pcieFunctionPath, service);
+-                    getPcieFunctionAssociation(asyncResp, pcieDevicePath,
+-                                               pcieDeviceId);
++                        asyncResp, pcieFunctionPath, service,
++                        [asyncResp, service, pcieDevicePath, pcieDeviceId,
++                         pcieFunctionId](uint8_t baseClassCode) {
++                            getFunctionLink(asyncResp, service, pcieDevicePath,
++                                            pcieDeviceId, pcieFunctionId,
++                                            baseClassCode);
++                        });
+                 });
+         });
+ }
+-- 
+2.43.0
+

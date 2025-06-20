@@ -27,6 +27,7 @@ SRC_URI += " \
             file://0017-Support-NetworkAdapter-schema.patch \
             file://0018-Support-NetworkDeviceFunction-schema.patch \
             file://0019-Support-to-show-more-options-in-Device-Type-and-Medi.patch \
+            file://0020-Support-link-to-Network-Device-Function.patch \
             file://ampere-registries.json \
            "
 do_compile[network] = "1"
