@@ -24,6 +24,7 @@ SRC_URI += " \
             file://0014-Support-to-show-PCIe-Function-properties.patch \
             file://0015-Support-to-link-from-PCIeFunction-to-Drives.patch \
             file://0016-Support-to-show-PCIe-Storage-Function.patch \
+            file://0017-Support-NetworkAdapter-schema.patch \
             file://ampere-registries.json \
            "
 do_compile[network] = "1"
