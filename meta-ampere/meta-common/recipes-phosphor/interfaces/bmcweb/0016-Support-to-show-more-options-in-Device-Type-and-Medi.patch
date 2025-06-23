@@ -1,0 +1,49 @@
+From fd89a95afff333014380712768e49c06066b3f35 Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Fri, 20 Jun 2025 20:18:34 +0700
+Subject: [PATCH] Support to show more options in Device Type and Media Type
+ enum
+
+The Redfish and PDIs defined the Retimer option for Device Type of PCIe
+Device and SMR option for Media Type of Drive. This commit supports to
+parse this option from dbus
+
+Upstream-Status: Pending
+
+Change-Id: Id826968977e7e4acda26c170474273dd171a4d10
+Signed-off-by: Thang Tran <thuutran@amperecomputing.com>
+---
+ redfish-core/include/utils/pcie_util.hpp | 4 +++-
+ redfish-core/lib/storage.hpp             | 4 ++++
+ 2 files changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/redfish-core/include/utils/pcie_util.hpp b/redfish-core/include/utils/pcie_util.hpp
+index 2e833cdf..f4db3639 100644
+--- a/redfish-core/include/utils/pcie_util.hpp
++++ b/redfish-core/include/utils/pcie_util.hpp
+@@ -164,7 +164,9 @@ inline std::optional<pcie_device::DeviceType> redfishPcieDeviceTypeFromDbus(
+         {"xyz.openbmc_project.Inventory.Item.PCIeDevice.DeviceTypes.MultiFunction",
+          pcie_device::DeviceType::MultiFunction},
+         {"xyz.openbmc_project.Inventory.Item.PCIeDevice.DeviceTypes.Simulated",
+-         pcie_device::DeviceType::Simulated}};
++         pcie_device::DeviceType::Simulated},
++        {"xyz.openbmc_project.Inventory.Item.PCIeDevice.DeviceTypes.Retimer",
++         pcie_device::DeviceType::Retimer}};
+ 
+     auto it = typeMap.find(deviceType);
+     if (it == typeMap.end())
+diff --git a/redfish-core/lib/storage.hpp b/redfish-core/lib/storage.hpp
+index 847216bc..7906532c 100644
+--- a/redfish-core/lib/storage.hpp
++++ b/redfish-core/lib/storage.hpp
+@@ -505,6 +505,10 @@ inline std::optional<drive::MediaType> convertDriveType(std::string_view type)
+     {
+         return drive::MediaType::HDD;
+     }
++    if (type == "xyz.openbmc_project.Inventory.Item.Drive.DriveType.SMR")
++    {
++        return drive::MediaType::SMR;
++    }
+     if (type == "xyz.openbmc_project.Inventory.Item.Drive.DriveType.SSD")
+     {
+         return drive::MediaType::SSD;
