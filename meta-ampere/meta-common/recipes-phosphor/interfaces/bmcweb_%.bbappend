@@ -26,6 +26,7 @@ SRC_URI += " \
             file://0016-Support-to-show-PCIe-Storage-Function.patch \
             file://0017-Support-NetworkAdapter-schema.patch \
             file://0018-Support-NetworkDeviceFunction-schema.patch \
+            file://0019-Support-to-show-more-options-in-Device-Type-and-Medi.patch \
             file://ampere-registries.json \
            "
 do_compile[network] = "1"
