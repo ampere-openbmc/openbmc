@@ -2,6 +2,11 @@ FILESEXTRAPATHS:append := "${THISDIR}/${PN}:"
 
 PACKAGECONFIG:append = " json"
 
+CONFIG_FOLDER = "phosphor-fan-presence"
+COMPAT_NAME = "com.ampere.Hardware.Chassis.Model.MtMitchell"
+CONTROL_CONFIGS = "events.json fans.json zones.json groups_2p.json groups_1p.json"
+EXECCON_OVERRIDE_CONF = "phosphor-fan-override-execcon.conf"
+
 SRC_URI:append = " \
                   file://events.json \
                   file://fans.json \
@@ -10,18 +15,12 @@ SRC_URI:append = " \
                   file://zones.json \
                   file://monitor.json \
                   file://presence.json \
-                  file://phosphor-fan-override.conf \
+                  file://${EXECCON_OVERRIDE_CONF} \
                  "
 
-CONFIG_FOLDER = "phosphor-fan-presence"
-COMPAT_NAME = "com.ampere.Hardware.Chassis.Model.MtMitchell"
-
-CONTROL_CONFIGS = "events.json fans.json zones.json groups_2p.json groups_1p.json"
-OVERRIDE_CONFIG = "phosphor-fan-override.conf"
-
-SYSTEMD_OVERRIDE:${PN}-control += "${OVERRIDE_CONFIG}:${TMPL_CONTROL}.d/${OVERRIDE_CONFIG}"
-SYSTEMD_OVERRIDE:${PN}-monitor += "${OVERRIDE_CONFIG}:${TMPL_MONITOR}.d/${OVERRIDE_CONFIG}"
-SYSTEMD_OVERRIDE:${PN}-presence-tach += "${OVERRIDE_CONFIG}:${TMPL_TACH}.d/${OVERRIDE_CONFIG}"
+SYSTEMD_OVERRIDE:${PN}-control += "${EXECCON_OVERRIDE_CONF}:${TMPL_CONTROL}.d/${EXECCON_OVERRIDE_CONF}"
+SYSTEMD_OVERRIDE:${PN}-monitor += "${EXECCON_OVERRIDE_CONF}:${TMPL_MONITOR}.d/${EXECCON_OVERRIDE_CONF}"
+SYSTEMD_OVERRIDE:${PN}-presence-tach += "${EXECCON_OVERRIDE_CONF}:${TMPL_TACH}.d/${EXECCON_OVERRIDE_CONF}"
 
 do_install:append () {
     # datadir = /usr/share
