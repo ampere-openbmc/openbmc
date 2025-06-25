@@ -1,0 +1,103 @@
+From bee13fd02fa06bd41acd50fadc9c8d53883131c9 Mon Sep 17 00:00:00 2001
+From: Prithvi Pai <ppai@nvidia.com>
+Date: Tue, 10 Jun 2025 10:45:55 +0530
+Subject: [PATCH 1/2] Change PDI to Software.Asset
+
+Added patch to change the PDI from Inventory.Decorator.Asset
+to Software.Asset because Decorator.Asset represents hardware
+information.
+This patch also addresses the concern of having association
+which is not documented. Hence the same is removed.
+
+Software.Asset is a new PDI to represent the Software Asset
+information (Merged)
+[1] https://gerrit.openbmc.org/c/openbmc/phosphor-dbus-interfaces/+/79966
+
+Tested:
+[2] busctl get-property xyz.openbmc_project.Smbios.MDR_V2 /xyz/openbmc_project/software/UEFI xyz.openbmc_project.Software.Asset Manufacturer
+s "NVIDIA"
+[3] busctl get-property xyz.openbmc_project.Smbios.MDR_V2 /xyz/openbmc_project/software/UEFI xyz.openbmc_project.Software.Asset ReleaseDate
+s "2025-05-18T04:03:37+00:00"
+
+Upstream-Status: Pending
+
+Change-Id: Iabaa4a9b5efaf5378bad1d4b66b3aeb43df32ee1
+Signed-off-by: Prithvi Pai <ppai@nvidia.com>
+---
+ include/firmware_inventory.hpp | 12 ++++--------
+ src/firmware_inventory.cpp     |  7 +------
+ 2 files changed, 5 insertions(+), 14 deletions(-)
+
+diff --git a/include/firmware_inventory.hpp b/include/firmware_inventory.hpp
+index ee27050..e69ea7e 100644
+--- a/include/firmware_inventory.hpp
++++ b/include/firmware_inventory.hpp
+@@ -2,9 +2,8 @@
+ #include "smbios_mdrv2.hpp"
+ 
+ #include <sdbusplus/asio/connection.hpp>
+-#include <xyz/openbmc_project/Association/Definitions/server.hpp>
+-#include <xyz/openbmc_project/Inventory/Decorator/Asset/server.hpp>
+ #include <xyz/openbmc_project/Inventory/Item/server.hpp>
++#include <xyz/openbmc_project/Software/Asset/server.hpp>
+ #include <xyz/openbmc_project/Software/ExtendedVersion/server.hpp>
+ #include <xyz/openbmc_project/Software/Version/server.hpp>
+ 
+@@ -20,10 +19,7 @@ namespace utils
+ std::vector<std::string> getExistingVersionPaths(sdbusplus::bus_t& bus);
+ }
+ 
+-using association =
+-    sdbusplus::server::xyz::openbmc_project::association::Definitions;
+-using asset =
+-    sdbusplus::server::xyz::openbmc_project::inventory::decorator::Asset;
++using softwareAsset = sdbusplus::server::xyz::openbmc_project::software::Asset;
+ using item = sdbusplus::server::xyz::openbmc_project::inventory::Item;
+ using softwareVersion =
+     sdbusplus::server::xyz::openbmc_project::software::Version;
+@@ -31,7 +27,7 @@ using softwareExtendedVersion =
+     sdbusplus::server::xyz::openbmc_project::software::ExtendedVersion;
+ 
+ class FirmwareInventory :
+-    sdbusplus::server::object_t<asset, item, association, softwareVersion,
++    sdbusplus::server::object_t<softwareAsset, item, softwareVersion,
+                                 softwareExtendedVersion>
+ {
+   public:
+@@ -44,7 +40,7 @@ class FirmwareInventory :
+ 
+     FirmwareInventory(sdbusplus::bus_t& bus, const std::string& objPath,
+                       const uint8_t index, uint8_t* smbiosTableStorage) :
+-        sdbusplus::server::object_t<asset, item, association, softwareVersion,
++        sdbusplus::server::object_t<softwareAsset, item, softwareVersion,
+                                     softwareExtendedVersion>(bus,
+                                                              objPath.c_str()),
+         firmwareInventoryIndex(index), storage(smbiosTableStorage)
+diff --git a/src/firmware_inventory.cpp b/src/firmware_inventory.cpp
+index 30053d5..a55a517 100644
+--- a/src/firmware_inventory.cpp
++++ b/src/firmware_inventory.cpp
+@@ -89,11 +89,6 @@ void FirmwareInventory::firmwareInfoUpdate(uint8_t* smbiosTableStorage)
+                          dataIn);
+     present(true);
+     purpose(softwareVersion::VersionPurpose::Other);
+-
+-    std::vector<std::tuple<std::string, std::string, std::string>> assocs;
+-    assocs.emplace_back("software_version", "functional",
+-                        "/xyz/openbmc_project/software");
+-    association::associations(assocs);
+ }
+ 
+ std::string FirmwareInventory::checkAndCreateFirmwarePath(
+@@ -205,7 +200,7 @@ void FirmwareInventory::firmwareReleaseDate(
+     const uint8_t positionNum, const uint8_t structLen, uint8_t* dataIn)
+ {
+     std::string result = positionToString(positionNum, structLen, dataIn);
+-    buildDate(result);
++    releaseDate(result);
+ }
+ 
+ void FirmwareInventory::firmwareManufacturer(
+-- 
+2.43.0
+
