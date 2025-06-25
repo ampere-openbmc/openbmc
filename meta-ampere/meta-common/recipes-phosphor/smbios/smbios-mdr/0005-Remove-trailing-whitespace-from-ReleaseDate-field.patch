@@ -1,0 +1,30 @@
+From 4360ae6f6eb7dc58fea00fae161cfef440b7d1e2 Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Wed, 25 Jun 2025 08:42:43 +0000
+Subject: [PATCH] Remove trailing whitespace from ReleaseDate field
+
+This commit removes trailing whitespace from the ReleaseDate field.
+The trailing whitespace in ReleaseDate format did not comply with ISO
+8601 standards [1].
+
+[1] https://gerrit.openbmc.org/c/openbmc/phosphor-dbus-interfaces/+/79966
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ src/firmware_inventory.cpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/firmware_inventory.cpp b/src/firmware_inventory.cpp
+index a55a517..7c7407b 100644
+--- a/src/firmware_inventory.cpp
++++ b/src/firmware_inventory.cpp
+@@ -200,6 +200,7 @@ void FirmwareInventory::firmwareReleaseDate(
+     const uint8_t positionNum, const uint8_t structLen, uint8_t* dataIn)
+ {
+     std::string result = positionToString(positionNum, structLen, dataIn);
++    boost::algorithm::trim_right(result);
+     releaseDate(result);
+ }
+ 
