@@ -1,0 +1,315 @@
+From cb996a3599f413a383077a56d184ed20e0a0dad8 Mon Sep 17 00:00:00 2001
+From: Prithvi Pai <ppai@nvidia.com>
+Date: Wed, 26 Mar 2025 17:53:32 +0530
+Subject: [PATCH] Property addition under FirmwareInventory
+
+Added `Manufacturer` and `ReleaseDate` properties under
+`redfish/v1/UpdateService/FirmwareInventory/{FirmwareInventoryId}`.
+The properties are obtained for some devices from smbios-records.
+
+Smbios-mdr change to fetch these properties(Merged):
+[1] https://gerrit.openbmc.org/c/openbmc/smbios-mdr/+/78911
+
+Smbios-mdr change to fetch these properties(In Review):
+[2] https://gerrit.openbmc.org/c/openbmc/smbios-mdr/+/80964
+
+The properties are checked to be non-empty value as per
+[3] https://gerrit.openbmc.org/c/openbmc/phosphor-dbus-interfaces/+/79966?tab=comments
+
+Tested:
+1) Redfish Service Validator test is successful
+2) Perform GET on FirmwareInventory collection
+```
+/redfish/v1/UpdateService/FirmwareInventory
+```
+3) Perform GET on FirmwareInventory/UEFI resource
+```
+/redfish/v1/UpdateService/FirmwareInventory/UEFI
+```
+`ReleaseDate` and `Manufacturer` information is available for this
+device
+```
+    "Manufacturer": "NVIDIA",
+    "ReleaseDate": "2025-05-18T04:03:37+00:00"
+```
+4) Perform GET on FirmwareInventory/FW_BMC_0 resource
+```
+/redfish/v1/UpdateService/FirmwareInventory/FW_BMC_0
+```
+`ReleaseDate` and `Manufacturer` information is not available.
+Hence these properties are not populated
+
+Upstream-Status: Pending
+
+Change-Id: I858d665d99e895873c51446ff91b6aee1ec10672
+Signed-off-by: Prithvi Pai <ppai@nvidia.com>
+---
+ Redfish.md                                |   2 +
+ redfish-core/include/utils/time_utils.hpp |   5 +
+ redfish-core/lib/update_service.hpp       | 157 ++++++++++++++--------
+ redfish-core/src/utils/time_utils.cpp     |  17 +++
+ 4 files changed, 127 insertions(+), 54 deletions(-)
+
+diff --git a/Redfish.md b/Redfish.md
+index 708815ea..ac2935a9 100644
+--- a/Redfish.md
++++ b/Redfish.md
+@@ -1138,8 +1138,10 @@ other.
+ #### SoftwareInventory
+ 
+ - Description
++- Manufacturer
+ - `RelatedItem@odata.count`
+ - RelatedItem
++- ReleaseDate
+ - Status
+ - Updateable
+ - Version
+diff --git a/redfish-core/include/utils/time_utils.hpp b/redfish-core/include/utils/time_utils.hpp
+index 989e5656..1bd7e533 100644
+--- a/redfish-core/include/utils/time_utils.hpp
++++ b/redfish-core/include/utils/time_utils.hpp
+@@ -82,5 +82,10 @@ std::optional<std::string> getDateTimeIso8601(std::string_view datetime);
+  */
+ void productionDateReport(crow::Response& res, const std::string& buildDate);
+ 
++/**
++ * @brief ReleaseDate report
++ */
++void releaseDateReport(crow::Response& res, const std::string& releaseDate);
++
+ } // namespace time_utils
+ } // namespace redfish
+diff --git a/redfish-core/lib/update_service.hpp b/redfish-core/lib/update_service.hpp
+index 725c34d7..11344012 100644
+--- a/redfish-core/lib/update_service.hpp
++++ b/redfish-core/lib/update_service.hpp
+@@ -28,7 +28,9 @@
+ #include "utils/dbus_utils.hpp"
+ #include "utils/json_utils.hpp"
+ #include "utils/sw_utils.hpp"
++#include "utils/time_utils.hpp"
+ 
++#include <asm-generic/errno.h>
+ #include <sys/mman.h>
+ #include <unistd.h>
+ 
+@@ -897,6 +899,51 @@ inline void getSwInfo(const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
+                 swEntry->second.first.str, swEntry->second.second);
+ }
+ 
++static void getSoftwareAssetInformation(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& service, const std::string& path)
++{
++    dbus::utility::getAllProperties(
++        service, path, "xyz.openbmc_project.Software.Asset",
++        [asyncResp,
++         path](const boost::system::error_code& ec,
++               const dbus::utility::DBusPropertiesMap& propertiesList) {
++            if (ec)
++            {
++                if (ec.value() == EBADR)
++                {
++                    BMCWEB_LOG_DEBUG("No software asset information");
++                    return;
++                }
++                BMCWEB_LOG_ERROR(
++                    "get software asset information failed for {} with error {}",
++                    path, ec.message());
++                messages::internalError(asyncResp->res);
++                return;
++            }
++            std::optional<std::string> manufacturer;
++            std::optional<std::string> releaseDate;
++            const bool success = sdbusplus::unpackPropertiesNoThrow(
++                dbus_utils::UnpackErrorPrinter(), propertiesList,
++                "Manufacturer", manufacturer, "ReleaseDate", releaseDate);
++            if (!success)
++            {
++                BMCWEB_LOG_ERROR("get software asset information failed for {}",
++                                 path);
++                messages::internalError(asyncResp->res);
++                return;
++            }
++            if (manufacturer && !manufacturer->empty())
++            {
++                asyncResp->res.jsonValue["Manufacturer"] = *manufacturer;
++            }
++            if (releaseDate && !releaseDate->empty())
++            {
++                time_utils::releaseDateReport(asyncResp->res, *releaseDate);
++            }
++        });
++}
++
+ inline void handleBMCUpdate(
+     const std::shared_ptr<bmcweb::AsyncResp>& asyncResp, task::Payload payload,
+     const MemoryFileDescriptor& memfd, const std::string& applyTime,
+@@ -1298,6 +1345,59 @@ inline void getSoftwareVersion(
+         });
+ }
+ 
++inline void afterSubtreeFirmwareInventoryGet(
++    const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++    const std::string& param,
++    const dbus::utility::MapperGetSubTreeResponse& subtree)
++{
++    std::shared_ptr<std::string> swId = std::make_shared<std::string>(param);
++    // Ensure we find our input swId, otherwise return an error
++    bool found = false;
++    for (const std::pair<std::string, dbus::utility::MapperServiceMap>& obj :
++         subtree)
++    {
++        sdbusplus::message::object_path path(obj.first);
++        std::string id = path.filename();
++        if (id.empty())
++        {
++            BMCWEB_LOG_DEBUG("Failed to find software id in {}", obj.first);
++            continue;
++        }
++        if (id != *swId)
++        {
++            continue;
++        }
++
++        if (obj.second.empty())
++        {
++            continue;
++        }
++
++        found = true;
++        sw_util::getSwStatus(asyncResp, swId, obj.second[0].first);
++        getSoftwareVersion(asyncResp, obj.second[0].first, obj.first, *swId);
++        getSoftwareAssetInformation(asyncResp, obj.second[0].first, obj.first);
++    }
++    if (!found)
++    {
++        BMCWEB_LOG_WARNING("Input swID {} not found!", *swId);
++        messages::resourceMissingAtURI(
++            asyncResp->res,
++            boost::urls::format(
++                "/redfish/v1/UpdateService/FirmwareInventory/{}", *swId));
++        return;
++    }
++    asyncResp->res.jsonValue["@odata.id"] = boost::urls::format(
++        "/redfish/v1/UpdateService/FirmwareInventory/{}", *swId);
++    asyncResp->res.jsonValue["@odata.type"] =
++        "#SoftwareInventory.v1_1_0.SoftwareInventory";
++    asyncResp->res.jsonValue["Name"] = "Software Inventory";
++    asyncResp->res.jsonValue["Status"]["HealthRollup"] = resource::Health::OK;
++
++    asyncResp->res.jsonValue["Updateable"] = false;
++    sw_util::getSwUpdatableStatus(asyncResp, swId);
++}
++
+ inline void handleUpdateServiceFirmwareInventoryGet(
+     App& app, const crow::Request& req,
+     const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
+@@ -1307,72 +1407,21 @@ inline void handleUpdateServiceFirmwareInventoryGet(
+     {
+         return;
+     }
+-    std::shared_ptr<std::string> swId = std::make_shared<std::string>(param);
+ 
+     constexpr std::array<std::string_view, 1> interfaces = {
+         "xyz.openbmc_project.Software.Version"};
+     dbus::utility::getSubTree(
+         "/xyz/openbmc_project/software/", 0, interfaces,
+         [asyncResp,
+-         swId](const boost::system::error_code& ec,
+-               const dbus::utility::MapperGetSubTreeResponse& subtree) {
++         param](const boost::system::error_code& ec,
++                const dbus::utility::MapperGetSubTreeResponse& subtree) {
+             BMCWEB_LOG_DEBUG("doGet callback...");
+             if (ec)
+             {
+                 messages::internalError(asyncResp->res);
+                 return;
+             }
+-
+-            // Ensure we find our input swId, otherwise return an error
+-            bool found = false;
+-            for (const std::pair<std::string,
+-                                 std::vector<std::pair<
+-                                     std::string, std::vector<std::string>>>>&
+-                     obj : subtree)
+-            {
+-                sdbusplus::message::object_path path(obj.first);
+-                std::string id = path.filename();
+-                if (id.empty())
+-                {
+-                    BMCWEB_LOG_DEBUG("Failed to find software id in {}",
+-                                     obj.first);
+-                    continue;
+-                }
+-                if (id != *swId)
+-                {
+-                    continue;
+-                }
+-
+-                if (obj.second.empty())
+-                {
+-                    continue;
+-                }
+-
+-                found = true;
+-                sw_util::getSwStatus(asyncResp, swId, obj.second[0].first);
+-                getSoftwareVersion(asyncResp, obj.second[0].first, obj.first,
+-                                   *swId);
+-            }
+-            if (!found)
+-            {
+-                BMCWEB_LOG_WARNING("Input swID {} not found!", *swId);
+-                messages::resourceMissingAtURI(
+-                    asyncResp->res,
+-                    boost::urls::format(
+-                        "/redfish/v1/UpdateService/FirmwareInventory/{}",
+-                        *swId));
+-                return;
+-            }
+-            asyncResp->res.jsonValue["@odata.id"] = boost::urls::format(
+-                "/redfish/v1/UpdateService/FirmwareInventory/{}", *swId);
+-            asyncResp->res.jsonValue["@odata.type"] =
+-                "#SoftwareInventory.v1_1_0.SoftwareInventory";
+-            asyncResp->res.jsonValue["Name"] = "Software Inventory";
+-            asyncResp->res.jsonValue["Status"]["HealthRollup"] =
+-                resource::Health::OK;
+-
+-            asyncResp->res.jsonValue["Updateable"] = false;
+-            sw_util::getSwUpdatableStatus(asyncResp, swId);
++            afterSubtreeFirmwareInventoryGet(asyncResp, param, subtree);
+         });
+ }
+ 
+diff --git a/redfish-core/src/utils/time_utils.cpp b/redfish-core/src/utils/time_utils.cpp
+index ce39287a..192b6dbd 100644
+--- a/redfish-core/src/utils/time_utils.cpp
++++ b/redfish-core/src/utils/time_utils.cpp
+@@ -482,6 +482,23 @@ void productionDateReport(crow::Response& res, const std::string& buildDate)
+     res.jsonValue["ProductionDate"] = *valueStr;
+ }
+ 
++/**
++ * @brief ReleaseDate report
++ */
++void releaseDateReport(crow::Response& res, const std::string& releaseDate)
++{
++    std::optional<std::string> valueStr = getDateTimeIso8601(releaseDate);
++    if (!valueStr)
++    {
++        BMCWEB_LOG_ERROR(
++            "Failed to convert release date to ISO 8601 format: {}",
++            releaseDate);
++        messages::internalError();
++        return;
++    }
++    res.jsonValue["ReleaseDate"] = *valueStr;
++}
++
+ std::optional<usSinceEpoch> dateStringToEpoch(std::string_view datetime)
+ {
+     for (const char* format : std::to_array(
+-- 
+2.43.0
+
