@@ -31,6 +31,7 @@ SRC_URI += " \
             file://0021-Property-addition-under-FirmwareInventory.patch \
             file://0022-PCIe-Correct-the-method-to-detect-instance-of-entiti.patch \
             file://0023-Replace-getting-endpoints-property-with-getAssociate.patch \
+            file://0024-update-the-association-names-of-PCIe-inventory.patch \
             file://ampere-registries.json \
            "
 do_compile[network] = "1"

@@ -15,4 +15,5 @@ SRC_URI:append = " \
                   file://0005-PCIeDevice-create-association-to-Chassis-motherboard.patch \
                   file://0006-Change-PDI-to-Software.Asset.patch \
                   file://0007-Remove-trailing-whitespace-from-ReleaseDate-field.patch \
+                  file://0008-update-association-names-of-PCIe-inventory.patch \
                  "

@@ -1,0 +1,342 @@
+From d46e17789fc9d867331ce5787f0df0f58a87c9d9 Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Fri, 27 Jun 2025 01:29:28 +0700
+Subject: [PATCH] update association names of PCIe inventory
+
+The list of associations of PCIe inventory is defined at [1], the SMBIOS
+has to be updated to correct the association names.
+This commit also removes redundant associations.
+
+[1] https://amperecomputing.atlassian.net/wiki/spaces/TST/pages/3441655907/System+Inventory+for+PCIe+devices+design#Association
+
+Upstream-Status: Pending
+
+Signed-off-by: Thang Tran <thuutran@amperecomputing.com>
+---
+ include/memory.hpp       |  8 ++------
+ include/memoryChunks.hpp |  8 ++------
+ include/memoryDomain.hpp |  7 ++-----
+ src/cxlLogicalDevice.cpp |  8 ++++----
+ src/drive.cpp            |  4 ++--
+ src/memory.cpp           | 14 ++------------
+ src/memoryChunks.cpp     | 21 ++-------------------
+ src/memoryDomain.cpp     | 16 ++--------------
+ src/network.cpp          |  4 ++--
+ src/pcieCxlFunction.cpp  | 10 +++++-----
+ src/pcieFunction.cpp     |  2 +-
+ src/pciedevice.cpp       |  4 ++--
+ 12 files changed, 28 insertions(+), 78 deletions(-)
+
+diff --git a/include/memory.hpp b/include/memory.hpp
+index f781915..5daf3e4 100644
+--- a/include/memory.hpp
++++ b/include/memory.hpp
+@@ -43,15 +43,13 @@ class Memory :
+     } __attribute__((packed));
+ 
+     Memory(sdbusplus::bus_t& bus, const std::string& objPath,
+-           MemoryInfo* deviceInfo, const std::string& funcObjPath,
+-           const std::string& pcieDeviceObjPath,
++           MemoryInfo* deviceInfo,
+            const std::string& memoryChunksObjPath,
+            const std::string& memoryDomainObjPath) :
+         sdbusplus::server::object_t<memoryInterface, powerManagementPolicy,
+                                     operationalStatus, association>(
+             bus, objPath.c_str()),
+-        objectPath(objPath), funcObjectPath(funcObjPath),
+-        pcieDeviceObjectPath(pcieDeviceObjPath),
++        objectPath(objPath),
+         memoryChunksObjectPath(memoryChunksObjPath),
+         memoryDomainObjectPath(memoryDomainObjPath), memoryInfo(deviceInfo)
+     {
+@@ -64,8 +62,6 @@ class Memory :
+ 
+   private:
+     std::string objectPath;
+-    std::string funcObjectPath;
+-    std::string pcieDeviceObjectPath;
+     std::string memoryChunksObjectPath;
+     std::string memoryDomainObjectPath;
+     MemoryInfo* memoryInfo;
+diff --git a/include/memoryChunks.hpp b/include/memoryChunks.hpp
+index 06fd57b..ec659d6 100644
+--- a/include/memoryChunks.hpp
++++ b/include/memoryChunks.hpp
+@@ -38,13 +38,11 @@ class MemoryChunks :
+     } __attribute__((packed));
+ 
+     MemoryChunks(sdbusplus::bus_t& bus, const std::string& objPath,
+-                 MemoryChunksInfo* deviceInfo, const std::string& funcObjPath,
+-                 const std::string& pcieDeviceObjPath,
++                 MemoryChunksInfo* deviceInfo,
+                  const std::string& memoryDomainObjPath) :
+         sdbusplus::server::object_t<memoryChunksInterface, operationalStatus,
+                                     association>(bus, objPath.c_str()),
+-        objectPath(objPath), funcObjectPath(funcObjPath),
+-        pcieDeviceObjectPath(pcieDeviceObjPath),
++        objectPath(objPath),
+         memoryDomainObjectPath(memoryDomainObjPath),
+         memoryChunksInfo(deviceInfo)
+     {
+@@ -56,8 +54,6 @@ class MemoryChunks :
+ 
+   private:
+     std::string objectPath;
+-    std::string funcObjectPath;
+-    std::string pcieDeviceObjectPath;
+     std::string memoryDomainObjectPath;
+     MemoryChunksInfo* memoryChunksInfo;
+ };
+diff --git a/include/memoryDomain.hpp b/include/memoryDomain.hpp
+index 47d5e2d..3e855e2 100644
+--- a/include/memoryDomain.hpp
++++ b/include/memoryDomain.hpp
+@@ -31,12 +31,10 @@ class MemoryDomain :
+     ~MemoryDomain() = default;
+ 
+     MemoryDomain(sdbusplus::bus_t& bus, const std::string& objPath,
+-                 const std::string& funcObjPath,
+-                 const std::string& pcieDeviceObjPath) :
++                 const std::string& funcObjPath) :
+         sdbusplus::server::object_t<memoryDomainInterface, operationalStatus,
+                                     association>(bus, objPath.c_str()),
+-        objectPath(objPath), funcObjectPath(funcObjPath),
+-        pcieDeviceObjectPath(pcieDeviceObjPath)
++        objectPath(objPath), funcObjectPath(funcObjPath)
+     {
+         memoryDomainUpdate();
+     }
+@@ -46,7 +44,6 @@ class MemoryDomain :
+   private:
+     std::string objectPath;
+     std::string funcObjectPath;
+-    std::string pcieDeviceObjectPath;
+ };
+ 
+ } // namespace smbios
+diff --git a/src/cxlLogicalDevice.cpp b/src/cxlLogicalDevice.cpp
+index 08f613e..feb7d5e 100644
+--- a/src/cxlLogicalDevice.cpp
++++ b/src/cxlLogicalDevice.cpp
+@@ -20,24 +20,24 @@ void CxlLogicalDevice::cxlUpdate()
+     std::vector<std::tuple<std::string, std::string, std::string>> assocs;
+     if (!funcObjectPath.empty())
+     {
+-        assocs.emplace_back("operated_by", "mapped_to", funcObjectPath);
++        assocs.emplace_back("produced_by", "producing", funcObjectPath);
+     }
+ 
+     if (!pcieDeviceObjectPath.empty())
+     {
+-        assocs.emplace_back("hosted_by", "provisioned_by",
++        assocs.emplace_back("contained_by", "containing",
+                             pcieDeviceObjectPath);
+     }
+ 
+     if (!memoryChunksObjectPath.empty())
+     {
+-        assocs.emplace_back("segmented_by", "operated_for",
++        assocs.emplace_back("exporting", "exported_by",
+                             memoryChunksObjectPath);
+     }
+ 
+     if (!memoryDomainObjectPath.empty())
+     {
+-        assocs.emplace_back("bound_with", "structured_for",
++        assocs.emplace_back("contained_by", "containing",
+                             memoryDomainObjectPath);
+     }
+ 
+diff --git a/src/drive.cpp b/src/drive.cpp
+index e26f9de..48e33ec 100644
+--- a/src/drive.cpp
++++ b/src/drive.cpp
+@@ -22,12 +22,12 @@ void DriveDevice::driveUpdate()
+     std::vector<std::tuple<std::string, std::string, std::string>> assocs;
+     if (!funcObjectPath.empty())
+     {
+-        assocs.emplace_back("described_by", "describeing", funcObjectPath);
++        assocs.emplace_back("produced_by", "producing", funcObjectPath);
+     }
+ 
+     if (!pcieDeviceObjectPath.empty())
+     {
+-        assocs.emplace_back("stored_by", "provides_storage",
++        assocs.emplace_back("contained_by", "containing",
+                             pcieDeviceObjectPath);
+     }
+ 
+diff --git a/src/memory.cpp b/src/memory.cpp
+index fa386ea..4dca55b 100644
+--- a/src/memory.cpp
++++ b/src/memory.cpp
+@@ -19,26 +19,16 @@ void Memory::memoryUpdate()
+     functional(true);
+ 
+     std::vector<std::tuple<std::string, std::string, std::string>> assocs;
+-    if (!funcObjectPath.empty())
+-    {
+-        assocs.emplace_back("served_by", "addressed_by", funcObjectPath);
+-    }
+-
+-    if (!pcieDeviceObjectPath.empty())
+-    {
+-        assocs.emplace_back("presented_by", "governed_by",
+-                            pcieDeviceObjectPath);
+-    }
+ 
+     if (!memoryChunksObjectPath.empty())
+     {
+-        assocs.emplace_back("divided_into", "composed_of",
++        assocs.emplace_back("contained_by", "containing",
+                             memoryChunksObjectPath);
+     }
+ 
+     if (!memoryDomainObjectPath.empty())
+     {
+-        assocs.emplace_back("grouped_into", "integrated_into",
++        assocs.emplace_back("contained_by", "containing",
+                             memoryDomainObjectPath);
+     }
+ 
+diff --git a/src/memoryChunks.cpp b/src/memoryChunks.cpp
+index 2304c45..1d8426e 100644
+--- a/src/memoryChunks.cpp
++++ b/src/memoryChunks.cpp
+@@ -17,27 +17,10 @@ void MemoryChunks::memoryChunksUpdate()
+     location(memoryChunksInfo->location);
+     functional(true);
+ 
+-    std::vector<std::tuple<std::string, std::string, std::string>> assocs;
+-    if (!funcObjectPath.empty())
+-    {
+-        assocs.emplace_back("handled_by", "referenced_by", funcObjectPath);
+-    }
+-
+-    if (!pcieDeviceObjectPath.empty())
+-    {
+-        assocs.emplace_back("partitioned_by", "organized_by",
+-                            pcieDeviceObjectPath);
+-    }
+-
+     if (!memoryDomainObjectPath.empty())
+     {
+-        assocs.emplace_back("collected_into", "assembled_into",
+-                            memoryDomainObjectPath);
+-    }
+-
+-    if (!assocs.empty())
+-    {
+-        association::associations(assocs);
++        association::associations({{"contained_by", "containing",
++                            memoryDomainObjectPath}});
+     }
+ }
+ 
+diff --git a/src/memoryDomain.cpp b/src/memoryDomain.cpp
+index 388935b..d8086c5 100644
+--- a/src/memoryDomain.cpp
++++ b/src/memoryDomain.cpp
+@@ -11,22 +11,10 @@ void MemoryDomain::memoryDomainUpdate()
+ {
+     functional(true);
+ 
+-    std::vector<std::tuple<std::string, std::string, std::string>> assocs;
+     if (!funcObjectPath.empty())
+     {
+-        assocs.emplace_back("accessed_through", "maintained_by",
+-                            funcObjectPath);
+-    }
+-
+-    if (!pcieDeviceObjectPath.empty())
+-    {
+-        assocs.emplace_back("provided_by", "supervised_by",
+-                            pcieDeviceObjectPath);
+-    }
+-
+-    if (!assocs.empty())
+-    {
+-        association::associations(assocs);
++        association::associations(
++            {{"produced_by", "producing", funcObjectPath}});
+     }
+ }
+ 
+diff --git a/src/network.cpp b/src/network.cpp
+index 90399f5..c48ec1f 100644
+--- a/src/network.cpp
++++ b/src/network.cpp
+@@ -19,12 +19,12 @@ void NetworkDevice::networkUpdate(const std::string& macAddress)
+     std::vector<std::tuple<std::string, std::string, std::string>> assocs;
+     if (!funcObjectPath.empty())
+     {
+-        assocs.emplace_back("transmitted_by", "received_by", funcObjectPath);
++        assocs.emplace_back("produced_by", "producing", funcObjectPath);
+     }
+ 
+     if (!pcieDeviceObjectPath.empty())
+     {
+-        assocs.emplace_back("networked_by", "provides_network",
++        assocs.emplace_back("contained_by", "containing",
+                             pcieDeviceObjectPath);
+     }
+ 
+diff --git a/src/pcieCxlFunction.cpp b/src/pcieCxlFunction.cpp
+index 25dcf4b..97cb7b3 100644
+--- a/src/pcieCxlFunction.cpp
++++ b/src/pcieCxlFunction.cpp
+@@ -51,13 +51,13 @@ void PCIeCxlFunction::updateDeviceFunc(uint8_t* smbiosTableStorage,
+         bus, cxlLogicalDevicePath, cxlLogicalDeviceInfo, funcPath,
+         pcieDeviceObjPath, memoryChunkslDevicePath, memoryDomainDevicePath);
+     memoryDev = std::make_unique<memoryDevice>(
+-        bus, memorylDevicePath, memoryDeviceInfo, funcPath, pcieDeviceObjPath,
+-        memoryChunkslDevicePath, memoryDomainDevicePath);
++        bus, memorylDevicePath, memoryDeviceInfo, memoryChunkslDevicePath,
++        memoryDomainDevicePath);
+     memoryChunksDev = std::make_unique<memoryChunksDevice>(
+-        bus, memoryChunkslDevicePath, memoryChunksDeviceInfo, funcPath,
+-        pcieDeviceObjPath, memoryDomainDevicePath);
++        bus, memoryChunkslDevicePath, memoryChunksDeviceInfo,
++        memoryDomainDevicePath);
+     memoryDomainDev = std::make_unique<memoryDomainDevice>(
+-        bus, memoryDomainDevicePath, funcPath, pcieDeviceObjPath);
++        bus, memoryDomainDevicePath, funcPath);
+ }
+ 
+ } // namespace smbios
+diff --git a/src/pcieFunction.cpp b/src/pcieFunction.cpp
+index 7994e82..7960858 100644
+--- a/src/pcieFunction.cpp
++++ b/src/pcieFunction.cpp
+@@ -26,7 +26,7 @@ void PcieFunction::pcieFunctionInfoUpdate()
+     if (!pcieDeviceObjPath.empty())
+     {
+         association::associations(
+-            {{"embedded_by", "embedeing", pcieDeviceObjPath}});
++            {{"exposed_by", "exposing", pcieDeviceObjPath}});
+     }
+ }
+ 
+diff --git a/src/pciedevice.cpp b/src/pciedevice.cpp
+index 3243ba6..68f1948 100644
+--- a/src/pciedevice.cpp
++++ b/src/pciedevice.cpp
+@@ -40,13 +40,13 @@ void PcieDevice::pcieDeviceInfoUpdate(uint8_t* smbiosTableStorage,
+ 
+     if (!pcieSlotObjPath.empty())
+     {
+-        assocs.emplace_back("contained_by", "associated_pcie_device",
++        assocs.emplace_back("upstream_pcie_slot", "associated_pcie_device",
+                             pcieSlotObjPath);
+     }
+ 
+     if (!motherboardObjPath.empty())
+     {
+-        assocs.emplace_back("chassis", "pcie_devices", motherboardObjPath);
++        assocs.emplace_back("contained_by", "containing", motherboardObjPath);
+     }
+ 
+     if (!assocs.empty())
+-- 
+2.43.0
+
