@@ -1,0 +1,30 @@
+From 0d049e7750b63b112194553e1f3ef8a7794a92f8 Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Fri, 27 Jun 2025 07:13:13 +0700
+Subject: [PATCH] update the association names of PCIe inventory
+
+The list of association names of PCIe inventory is defined at [1],
+bmcweb has to be updated to correct the name of associations.
+
+[1] https://amperecomputing.atlassian.net/wiki/spaces/TST/pages/3441655907/System+Inventory+for+PCIe+devices+design#Association
+
+Upstream-Status: Pending
+
+Signed-off-by: Thang Tran <thuutran@amperecomputing.com>
+---
+ redfish-core/lib/pcie.hpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/redfish-core/lib/pcie.hpp b/redfish-core/lib/pcie.hpp
+index b93af81e..51918fc4 100644
+--- a/redfish-core/lib/pcie.hpp
++++ b/redfish-core/lib/pcie.hpp
+@@ -264,7 +264,7 @@ inline void getPCIeDeviceSlotPath(
+     const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
+     std::function<void(const std::string& pcieDeviceSlot)>&& callback)
+ {
+-    std::string associationPath = pcieDevicePath + "/contained_by";
++    std::string associationPath = pcieDevicePath + "/upstream_pcie_slot";
+     dbus::utility::getAssociatedSubTreePaths(
+         associationPath, sdbusplus::message::object_path(inventoryPath), 0,
+         pcieSlotInterface,

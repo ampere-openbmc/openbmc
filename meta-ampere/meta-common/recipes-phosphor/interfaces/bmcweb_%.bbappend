@@ -30,6 +30,7 @@ SRC_URI += " \
             file://0015-Support-NetworkAdapter-and-NetworkDeviceFunction-sch.patch \
             file://0016-Support-to-show-more-options-in-Device-Type-and-Medi.patch \
             file://0017-Property-addition-under-FirmwareInventory.patch \
+            file://0018-update-the-association-names-of-PCIe-inventory.patch \
             file://ampere-registries.json \
            "
 do_compile[network] = "1"
