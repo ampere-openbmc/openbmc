@@ -1,0 +1,133 @@
+From 8aa90faaa7e2974c219537867fb3f8b70cd2ac01 Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Fri, 27 Jun 2025 00:47:51 +0700
+Subject: [PATCH 2/3] Replace getting "endpoints" property with
+ getAssociatedSubTreePaths
+
+An object path can has a pair "forward - reverse" association but it can
+be used with multiple purposes. E.g: A Chassis has "containting -
+contained_by" association, that can be used with PCIeDevices/Drives/...
+
+Replace getting "endpoints" property with getAssociatedSubTreePaths can
+avoid redundant return values b/c that function ensures object paths
+includes correct inteface.
+
+Upstream-Status: Pending
+
+Signed-off-by: Thang Tran <thuutran@amperecomputing.com>
+---
+ redfish-core/lib/storage.hpp | 85 +++++++++++++++++++++++-------------
+ 1 file changed, 54 insertions(+), 31 deletions(-)
+
+diff --git a/redfish-core/lib/storage.hpp b/redfish-core/lib/storage.hpp
+index 384af268..e635a8cf 100644
+--- a/redfish-core/lib/storage.hpp
++++ b/redfish-core/lib/storage.hpp
+@@ -248,17 +248,19 @@ inline void afterSystemsStorageGetSubtree(
+     asyncResp->res.jsonValue["Id"] = storageId;
+     asyncResp->res.jsonValue["Status"]["State"] = resource::State::Enabled;
+ 
++    const std::vector<std::string_view> driveInterface = {
++        "xyz.openbmc_project.Inventory.Item.Drive"};
++
+     getValidStoragePath(
+         storageId, asyncResp,
+-        [asyncResp, storageId](const std::string& storagePath,
+-                               [[maybe_unused]] const std::string&) {
+-            dbus::utility::getProperty<std::vector<std::string>>(
+-                "xyz.openbmc_project.ObjectMapper",
++        [asyncResp, storageId, driveInterface](const std::string& storagePath,
++        [[maybe_unused]] const std::string&) {
++            dbus::utility::getAssociatedSubTreePaths(
+                 storagePath + "/provides_storage",
+-                "xyz.openbmc_project.Association", "endpoints",
+-                [asyncResp,
+-                 storageId](const boost::system::error_code& ec2,
+-                            const std::vector<std::string>& driveList) {
++                sdbusplus::message::object_path(
++                    "/xyz/openbmc_project/inventory"), 0, driveInterface,
++                [asyncResp, storageId](const boost::system::error_code& ec2,
++                const dbus::utility::MapperGetSubTreePathsResponse& driveList) {
+                     if (ec2)
+                     {
+                         if (ec2.value() != EBADR)
+@@ -890,32 +892,53 @@ inline void getDriveFunction(
+     const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
+     const std::string& storageId, const std::string& drivePath)
+ {
+-    auto found = drivePath.find_last_of("/");
+-    std::string functionPath = drivePath.substr(0, found);
++    std::string endpointPath = drivePath + "/described_by";
++    const std::vector<std::string_view> pcieFuncInterface =
++        {"xyz.openbmc_project.Inventory.Item.PCIeFunction"};
+ 
+-    std::string functionName =
+-        sdbusplus::message::object_path(functionPath).filename();
++    dbus::utility::getAssociatedSubTreePaths(
++        endpointPath,
++        sdbusplus::message::object_path("/xyz/openbmc_project/inventory"), 0,
++        pcieFuncInterface,
++        [asyncResp, storageId](const boost::system::error_code& ec,
++            const dbus::utility::MapperGetSubTreePathsResponse& pcieFuncList)
++        {
++            if (ec)
++            {
++                if (ec.value() != EBADR)
++                {
++                    BMCWEB_LOG_ERROR("DBUS response error {}", ec.value());
++                    messages::internalError(asyncResp->res);
++                }
++                return;
++            }
++            // Limitation: assume that Storage ID and PCIe Device ID is the same
++            nlohmann::json::array_t functions;
+ 
+-    // Check if the parent of driveId is /{path}/Function#
+-    size_t pos = functionName.find("Function");
+-    if (pos == std::string::npos)
+-    {
+-        // Not found
+-        messages::resourceNotFound(asyncResp->res, "Function", drivePath);
+-        return;
+-    }
++            for (const std::string& pcieFunc : pcieFuncList)
++            {
++                std::string funcName = 
++                    sdbusplus::message::object_path(pcieFunc).filename();
+ 
+-    // Limitation: assume that Storage ID and PCIe Device ID is the same
+-    nlohmann::json::array_t functions;
+-    nlohmann::json::object_t function;
+-    function["@odata.id"] = boost::urls::format(
+-        "/redfish/v1/Systems/{}/PCIeDevices/{}/PCIeFunctions/{}",
+-        BMCWEB_REDFISH_SYSTEM_URI_NAME, storageId, functionName);
+-    functions.emplace_back(std::move(function));
+-    // Link to PCIe Function
+-    asyncResp->res.jsonValue["Links"]["PCIeFunctions@odata.count"] =
+-        functions.size();
+-    asyncResp->res.jsonValue["Links"]["PCIeFunctions"] = std::move(functions);
++                if (funcName.empty())
++                {
++                    continue;
++                }
++
++                nlohmann::json::object_t item;
++                item["@odata.id"] = boost::urls::format(
++                    "/redfish/v1/Systems/{}/PCIeDevices/{}/PCIeFunctions/{}",
++                    BMCWEB_REDFISH_SYSTEM_URI_NAME, storageId, funcName);
++
++                functions.emplace_back(std::move(item));
++            }
++
++            // Link to PCIe Function
++            asyncResp->res.jsonValue["Links"]["PCIeFunctions@odata.count"] =
++                functions.size();
++            asyncResp->res.jsonValue["Links"]["PCIeFunctions"] = std::move(functions);
++        }
++    );
+ }
+ 
+ inline void handleSystemsStorageDriveGetById(
+-- 
+2.43.0
+

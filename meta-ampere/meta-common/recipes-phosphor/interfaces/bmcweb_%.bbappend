@@ -29,6 +29,8 @@ SRC_URI += " \
             file://0019-Support-to-show-more-options-in-Device-Type-and-Medi.patch \
             file://0020-Support-link-to-Network-Device-Function.patch \
             file://0021-Property-addition-under-FirmwareInventory.patch \
+            file://0022-PCIe-Correct-the-method-to-detect-instance-of-entiti.patch \
+            file://0023-Replace-getting-endpoints-property-with-getAssociate.patch \
             file://ampere-registries.json \
            "
 do_compile[network] = "1"
