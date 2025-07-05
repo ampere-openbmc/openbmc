@@ -5,6 +5,8 @@ PACKAGECONFIG:append = " nvmesensor nvme-pec-checking "
 
 PACKAGECONFIG[nvme-pec-checking] = "-Dnvme-pec-checking=true, -Dnvme-pec-checking=false"
 
+inherit obmc-phosphor-systemd
+
 SRC_URI += " \
             file://0001-Remove-throwing-exception-when-can-not-write-data-to.patch \
             file://0002-ADC-Match-InterfaceAdded-signal.patch \
@@ -12,4 +14,7 @@ SRC_URI += " \
             file://0004-adcsensor-support-PresenceGpio-option.patch \
             file://0005-psusensor-monitor-interfaceAdded-signal-for-CPU-obje.patch \
             file://0006-nvmesensor-Enale-PEC-checking-to-smbus-driver.patch \
-"
+            file://adcsensor.service-override.conf \
+           "
+
+SYSTEMD_OVERRIDE:${PN}:append = "adcsensor.service-override.conf:xyz.openbmc_project.adcsensor.service.d/adcsensor.service-override.conf"
