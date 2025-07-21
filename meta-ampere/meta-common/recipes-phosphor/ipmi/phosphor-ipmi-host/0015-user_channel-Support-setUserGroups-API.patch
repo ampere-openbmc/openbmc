@@ -1,0 +1,269 @@
+From 176d4730dc1de5bf30a0feac75ca09b81f3b6f43 Mon Sep 17 00:00:00 2001
+From: Thu Nguyen <thu@os.amperecomputing.com>
+Date: Wed, 16 Jul 2025 15:52:30 +0000
+Subject: [PATCH] user_channel: Support setUserGroups API
+
+The user groups can be different between the user. Some users can only
+use in Ipmi request, some user can only be used in the Redfish.
+In the BootStrap account case, It will be used for Redfish Host
+Interface so it is only belong to `redfish` group.
+Add setUserGroups to allow set the groups of one user.
+
+Upstream-Status: Pending
+
+Change-Id: I0999d9c351ddff1d5f28e29d6ddd32cb038bc07a
+Signed-off-by: Thu Nguyen <thu@os.amperecomputing.com>
+---
+ user_channel/user_layer.cpp |  16 ++++++
+ user_channel/user_layer.hpp |  12 +++++
+ user_channel/user_mgmt.cpp  | 104 ++++++++++++++++++++++++++++++++++++
+ user_channel/user_mgmt.hpp  |  25 +++++++++
+ 4 files changed, 157 insertions(+)
+
+diff --git a/user_channel/user_layer.cpp b/user_channel/user_layer.cpp
+index ee147d8..08b9f8c 100644
+--- a/user_channel/user_layer.cpp
++++ b/user_channel/user_layer.cpp
+@@ -231,4 +231,20 @@ Cc ipmiUserGetUserPayloadAccess(const uint8_t chNum, const uint8_t userId,
+     return ccSuccess;
+ }
+ 
++Cc ipmiUserSetUserGroups(const uint8_t userId, const uint8_t chNum,
++                         const std::vector<std::string>& groupAccess)
++{
++    if (!UserAccess::isValidUserId(userId))
++    {
++        return ccParmOutOfRange;
++    }
++
++    if (!UserAccess::isValidChannel(chNum))
++    {
++        return ccInvalidFieldRequest;
++    }
++
++    return getUserAccessObject().setUserGroups(userId, chNum, groupAccess);
++}
++
+ } // namespace ipmi
+diff --git a/user_channel/user_layer.hpp b/user_channel/user_layer.hpp
+index ad215e3..41e1ffb 100644
+--- a/user_channel/user_layer.hpp
++++ b/user_channel/user_layer.hpp
+@@ -20,6 +20,7 @@
+ 
+ #include <bitset>
+ #include <string>
++#include <vector>
+ 
+ namespace ipmi
+ {
+@@ -267,4 +268,15 @@ Cc ipmiUserSetUserPayloadAccess(const uint8_t chNum, const uint8_t operation,
+ Cc ipmiUserGetUserPayloadAccess(const uint8_t chNum, const uint8_t userId,
+                                 PayloadAccess& payloadAccess);
+ 
++/** @brief sets user group access data
++ *
++ *  @param[in] userId - user id
++ *  @param[in] chNum - channel number
++ *  @param[in] groups - groups data
++ *
++ *  @return ccSuccess for success, others for failure.
++ */
++Cc ipmiUserSetUserGroups(const uint8_t userId, const uint8_t chNum,
++                         const std::vector<std::string>& groupAccess);
++
+ } // namespace ipmi
+diff --git a/user_channel/user_mgmt.cpp b/user_channel/user_mgmt.cpp
+index 7c30049..fdc6310 100644
+--- a/user_channel/user_mgmt.cpp
++++ b/user_channel/user_mgmt.cpp
+@@ -1019,6 +1019,7 @@ static constexpr const char* jsonIpmiEnabled = "ipmi_enabled";
+ static constexpr const char* jsonLinkAuthEnabled = "link_auth_enabled";
+ static constexpr const char* jsonAccCallbk = "access_callback";
+ static constexpr const char* jsonUserEnabled = "user_enabled";
++static constexpr const char* jsonUserGroup = "user_groups";
+ static constexpr const char* jsonUserInSys = "user_in_system";
+ static constexpr const char* jsonFixedUser = "fixed_user_name";
+ static constexpr const char* payloadEnabledStr = "payload_enabled";
+@@ -1158,6 +1159,8 @@ void UserAccess::readUserData()
+             userInfo[jsonLinkAuthEnabled].get<std::vector<bool>>();
+         std::vector<bool> accessCallback =
+             userInfo[jsonAccCallbk].get<std::vector<bool>>();
++        std::vector<std::string> userGroups =
++            userInfo[jsonUserGroup].get<std::vector<std::string>>();
+ 
+         // Payload Enables Processing.
+         std::array<std::array<bool, ipmiMaxChannels>, payloadsPerByte>
+@@ -1230,6 +1233,7 @@ void UserAccess::readUserData()
+             userInfo[jsonUserInSys].get<bool>();
+         usersTbl.user[usrIndex].fixedUserName =
+             userInfo[jsonFixedUser].get<bool>();
++        usersTbl.user[usrIndex].userGroups = userGroups;
+     }
+ 
+     lg2::debug("User data read from IPMI data file");
+@@ -1281,6 +1285,7 @@ void UserAccess::writeUserData()
+         jsonUserInfo[jsonUserEnabled] = usersTbl.user[usrIndex].userEnabled;
+         jsonUserInfo[jsonUserInSys] = usersTbl.user[usrIndex].userInSystem;
+         jsonUserInfo[jsonFixedUser] = usersTbl.user[usrIndex].fixedUserName;
++        jsonUserInfo[jsonUserGroup] = usersTbl.user[usrIndex].userGroups;
+ 
+         readPayloadAccessFromUserInfo(usersTbl.user[usrIndex], stdPayload,
+                                       oemPayload);
+@@ -1414,6 +1419,11 @@ UsersTbl* UserAccess::getUsersTblPtr()
+     return &usersTbl;
+ }
+ 
++std::vector<std::string>& UserAccess::getUsersAllAvailableGroup()
++{
++    return availableGroups;
++}
++
+ void UserAccess::getSystemPrivAndGroups()
+ {
+     std::map<std::string, PrivAndGroupType> properties;
+@@ -1691,4 +1701,98 @@ void UserAccess::cacheUserDataFile()
+ 
+     return;
+ }
++
++bool UserAccess::isValidGroups(const std::vector<std::string>& groupAccess)
++{
++    if (groupAccess.empty())
++    {
++        lg2::error("User groupAccess should not empty.");
++        return false;
++    }
++
++    auto& allGroups = getUsersAllAvailableGroup();
++    if (allGroups.empty())
++    {
++        lg2::error("User Alll available group should not empty.");
++        return false;
++    }
++
++    for (auto& group : groupAccess)
++    {
++        if (std::find(allGroups.begin(), allGroups.end(), group) ==
++            allGroups.end())
++        {
++            return false;
++        }
++    }
++    return true;
++}
++
++Cc UserAccess::setUserGroups(const uint8_t userId, const uint8_t chNum,
++                             const std::vector<std::string>& groupAccess)
++{
++    if (!isValidGroups(groupAccess))
++    {
++        lg2::error("Invalid user groups.");
++        return ccInvalidFieldRequest;
++    }
++
++    std::string userName;
++    if (ipmiUserGetUserName(userId, userName) != ccSuccess)
++    {
++        lg2::error("User Name not found, user Id: {USER_ID}", "USER_ID",
++                   userId);
++        return ccParmOutOfRange;
++    }
++    if (userName.empty())
++    {
++        lg2::error("User name is empty.");
++        return ccUnspecifiedError;
++    }
++
++    sdbusplus::message::object_path tempUserPath(userObjBasePath);
++    tempUserPath /= userName;
++    std::string userPath(tempUserPath);
++    try
++    {
++        setDbusProperty(bus, userMgrService, userPath, usersInterface,
++                        userGrpProperty, groupAccess);
++    }
++    catch (const sdbusplus::exception_t& e)
++    {
++        lg2::debug(
++            "Failed to set-property of {PROP}, interface {INF}, path:{PATH} error {ERROR}",
++            "PROP", userGrpProperty, "INF", usersInterface, "PATH", userPath,
++            "ERROR", e);
++        return ccUnspecifiedError;
++    }
++
++    boost::interprocess::scoped_lock<boost::interprocess::named_recursive_mutex>
++        userLock{*userMutex};
++    UserInfo* userInfo = getUserInfo(userId);
++    if (!userInfo)
++    {
++        lg2::error("Failed to get user info of user name {NAME}", "NAME",
++                   userName);
++        return ccUnspecifiedError;
++    }
++    userInfo->userGroups = groupAccess;
++
++    if (std::find(groupAccess.begin(), groupAccess.end(), ipmiGrpName) ==
++        groupAccess.end())
++    {
++        userInfo->userPrivAccess[chNum].ipmiEnabled = false;
++    }
++    try
++    {
++        writeUserData();
++    }
++    catch (const std::exception& e)
++    {
++        lg2::error("Write user data failed");
++        return ccUnspecifiedError;
++    }
++
++    return ccSuccess;
++}
+ } // namespace ipmi
+diff --git a/user_channel/user_mgmt.hpp b/user_channel/user_mgmt.hpp
+index 3f4b265..06eff75 100644
+--- a/user_channel/user_mgmt.hpp
++++ b/user_channel/user_mgmt.hpp
+@@ -131,6 +131,7 @@ struct UserInfo
+     uint8_t userName[ipmiMaxUserName];
+     UserPrivAccess userPrivAccess[ipmiMaxChannels];
+     bool userEnabled;
++    std::vector<std::string> userGroups;
+     bool userInSystem;
+     bool fixedUserName;
+     PayloadAccess payloadAccess[ipmiMaxChannels];
+@@ -430,6 +431,30 @@ class UserAccess
+      */
+     UsersTbl* getUsersTblPtr();
+ 
++    /** @brief function to get all User available groups
++     *
++     */
++    std::vector<std::string>& getUsersAllAvailableGroup();
++
++    /** @brief determines valid user group access
++     *
++     *  @param[in] groupAccess - List of groupAccess
++     *
++     *  @return true if valid, false otherwise
++     */
++    bool isValidGroups(const std::vector<std::string>& groupAccess);
++
++    /** @brief sets user group access data
++     *
++     *  @param[in] userId - user id
++     *  @param[in] chNum - channel number
++     *  @param[in] groups - groups data
++     *
++     *  @return ccSuccess for success, others for failure.
++     */
++    Cc setUserGroups(const uint8_t userId, const uint8_t chNum,
++                     const std::vector<std::string>& groupAccess);
++
+     std::unique_ptr<boost::interprocess::named_recursive_mutex> userMutex{
+         nullptr};
+ 
+-- 
+2.34.1
+

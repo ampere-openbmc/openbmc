@@ -1,12 +1,14 @@
 FILESEXTRAPATHS:append := "${THISDIR}/${PN}:"
 
 PACKAGECONFIG[dynamic-storages-only] = "-Ddynamic-storages-only=enabled, -Ddynamic-storages-only=disabled"
+PACKAGECONFIG[redfish-host-interface] = "-Dredfish-host-interface=enabled, -Dredfish-host-interface=disabled"
 
 RRECOMMENDS:${PN} += "ipmitool"
 RDEPENDS:${PN} += "bash"
 
+EXTRA_OEMESON:append = " -Dredfish-host-interface=enabled"
+
 SRC_URI += "\
-            file://0001-ampere-allow-user-access-from-external-repos.patch \
             file://0002-Response-thresholds-for-Get-SDR-command.patch \
             file://0003-ampere-dbus-sdr-support-static-FRU-s-ID-configuratio.patch \
             file://0004-dcmi-Support-fully-power-limit-setting-commands.patch \
@@ -18,6 +20,12 @@ SRC_URI += "\
             file://0010-dbus-sdr-correct-sensor-type-code-of-Power-sensors.patch \
             file://0011-dbus-sdr-remove-unused-boost-process-header.patch \
             file://0012-build-fixes-libdynamiccmds-build-options.patch \
+            file://0013-user_channel-Move-the-D-Bus-defined-to-common-file.patch \
+            file://0014-redfish_host_interface-Support-GetFingerPrint.patch \
+            file://0015-user_channel-Support-setUserGroups-API.patch \
+            file://0016-user_channel-Add-APIs-to-manage-None-IPMI-group-user.patch \
+            file://0017-user_channel-Support-setUserIsBootStrapState-API.patch \
+            file://0018-redfish_host_interface-Support-GetBootStrapAccount.patch \
             file://ampere-phosphor-softpoweroff \
             file://ampere.xyz.openbmc_project.Ipmi.Internal.SoftPowerOff.service \
            "

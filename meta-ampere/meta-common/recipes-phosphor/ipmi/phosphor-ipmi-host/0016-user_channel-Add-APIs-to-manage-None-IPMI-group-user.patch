@@ -1,0 +1,201 @@
+From 5e502350c12adbf3d7449b4e91b658a1a6bf22ee Mon Sep 17 00:00:00 2001
+From: Thu Nguyen <thu@os.amperecomputing.com>
+Date: Wed, 30 Jul 2025 11:42:04 +0000
+Subject: [PATCH] user_channel: Add APIs to manage None IPMI group user
+
+Ipmid does not manage the list of None IPMI group users. But with
+command `GetBootStrapAccount` as [1], it can be used to create the none
+Ipmi group users. Add APIs to manage list of user name with None IPMI
+group.
+
+[1] https://gerrit.openbmc.org/c/openbmc/docs/+/79327
+
+Tested:
+1. Use Ipmi `ipmitool raw 0x2c 0x2 0x52 0xa5` to create 15 bootStrap
+account.
+2. Create the 16th bootStrap account should be failed because system
+only support 15 none IPMI Group account.
+3. Remove one bootStrap account
+4. Create new BootStrap account should be passed.
+5. Update UserGroup of one bootStrap account, add `ipmi` group. Create
+new BootStrap account should be passed.
+
+Upstream-Status: Pending
+
+Change-Id: I7e3f6ab9b6f37c45b55527cd5fa737bc693099b2
+Signed-off-by: Thu Nguyen <thu@os.amperecomputing.com>
+---
+ user_channel/user_layer.cpp | 10 ++++++++++
+ user_channel/user_layer.hpp | 17 ++++++++++++++++
+ user_channel/user_mgmt.cpp  | 39 +++++++++++++++++++++++++++++++++++++
+ user_channel/user_mgmt.hpp  | 18 +++++++++++++++++
+ 4 files changed, 84 insertions(+)
+
+diff --git a/user_channel/user_layer.cpp b/user_channel/user_layer.cpp
+index 08b9f8c..38eced1 100644
+--- a/user_channel/user_layer.cpp
++++ b/user_channel/user_layer.cpp
+@@ -247,4 +247,14 @@ Cc ipmiUserSetUserGroups(const uint8_t userId, const uint8_t chNum,
+     return getUserAccessObject().setUserGroups(userId, chNum, groupAccess);
+ }
+ 
++Cc ipmiUserAddUserToNonIpmiGroupUsers(const std::string& userName)
++{
++    return getUserAccessObject().addUserToNonIpmiGroupUsers(userName);
++}
++
++Cc ipmiUserRemoveUserFromNoneIpmiGroupUsers(const std::string& userName)
++{
++    return getUserAccessObject().removeUserFromNoneIpmiGroupUsers(userName);
++}
++
+ } // namespace ipmi
+diff --git a/user_channel/user_layer.hpp b/user_channel/user_layer.hpp
+index 41e1ffb..6d8e828 100644
+--- a/user_channel/user_layer.hpp
++++ b/user_channel/user_layer.hpp
+@@ -38,6 +38,7 @@ static constexpr uint8_t invalidUserId = 0xFF;
+ static constexpr uint8_t reservedUserId = 0x0;
+ static constexpr uint8_t ipmiMaxUserName = 16;
+ static constexpr uint8_t ipmiMaxUsers = 15;
++static constexpr uint8_t maxSystemUsers = 30;
+ static constexpr uint8_t ipmiMaxChannels = 16;
+ static constexpr uint8_t maxIpmi20PasswordSize = 20;
+ static constexpr uint8_t maxIpmi15PasswordSize = 16;
+@@ -279,4 +280,20 @@ Cc ipmiUserGetUserPayloadAccess(const uint8_t chNum, const uint8_t userId,
+ Cc ipmiUserSetUserGroups(const uint8_t userId, const uint8_t chNum,
+                          const std::vector<std::string>& groupAccess);
+ 
++/** @brief add userName to list of None Ipmi group users
++ *
++ * @param[in] userName - user name
++ *
++ * @return ccSuccess for success, others for failure.
++ */
++Cc ipmiUserAddUserToNonIpmiGroupUsers(const std::string& userName);
++
++/** @brief remove userName from the list of None Ipmi group users
++ *
++ * @param[in] userName - user name
++ *
++ * @return ccSuccess for success, others for failure.
++ */
++Cc ipmiUserRemoveUserFromNoneIpmiGroupUsers(const std::string& userName);
++
+ } // namespace ipmi
+diff --git a/user_channel/user_mgmt.cpp b/user_channel/user_mgmt.cpp
+index fdc6310..40c31cc 100644
+--- a/user_channel/user_mgmt.cpp
++++ b/user_channel/user_mgmt.cpp
+@@ -213,6 +213,7 @@ void userUpdatedSignalHandler(UserAccess& usrAccess, sdbusplus::message_t& msg)
+         if (std::find(groups.begin(), groups.end(), ipmiGrpName) ==
+             groups.end())
+         {
++            ipmiUserAddUserToNonIpmiGroupUsers(userName);
+             return;
+         }
+         userEvent = UserUpdateEvent::userCreated;
+@@ -223,6 +224,8 @@ void userUpdatedSignalHandler(UserAccess& usrAccess, sdbusplus::message_t& msg)
+         std::vector<std::string> interfaces;
+         msg.read(objPath, interfaces);
+         getUserNameFromPath(objPath.str, userName);
++        /* Try to remove user name from None Ipmi Group User list */
++        ipmiUserRemoveUserFromNoneIpmiGroupUsers(userName);
+         userEvent = UserUpdateEvent::userDeleted;
+     }
+     else if (signal == userRenamedSignal)
+@@ -282,11 +285,13 @@ void userUpdatedSignalHandler(UserAccess& usrAccess, sdbusplus::message_t& msg)
+                     groups.end())
+                 {
+                     // remove user from ipmi user list.
++                    ipmiUserAddUserToNonIpmiGroupUsers(userName);
+                     userUpdateHelper(usrAccess, UserUpdateEvent::userDeleted,
+                                      userName, priv, enabled, newUserName);
+                 }
+                 else
+                 {
++                    ipmiUserRemoveUserFromNoneIpmiGroupUsers(userName);
+                     DbusUserObjProperties properties;
+                     try
+                     {
+@@ -1781,6 +1786,8 @@ Cc UserAccess::setUserGroups(const uint8_t userId, const uint8_t chNum,
+     if (std::find(groupAccess.begin(), groupAccess.end(), ipmiGrpName) ==
+         groupAccess.end())
+     {
++        /* Add user to none Ipmi Group User list */
++        ipmiUserAddUserToNonIpmiGroupUsers(userName);
+         userInfo->userPrivAccess[chNum].ipmiEnabled = false;
+     }
+     try
+@@ -1795,4 +1802,36 @@ Cc UserAccess::setUserGroups(const uint8_t userId, const uint8_t chNum,
+ 
+     return ccSuccess;
+ }
++
++Cc UserAccess::addUserToNonIpmiGroupUsers(const std::string& userName)
++{
++    if (std::find(listNoneIpmiGroupUsers.begin(), listNoneIpmiGroupUsers.end(),
++                  userName) == listNoneIpmiGroupUsers.end())
++    {
++        if (listNoneIpmiGroupUsers.size() >= (maxSystemUsers - ipmiMaxUsers))
++        {
++            lg2::error("Non-ipmi User limit reached");
++            return ccOutOfSpace;
++        }
++        listNoneIpmiGroupUsers.emplace_back(userName);
++    }
++
++    return ccSuccess;
++}
++
++Cc UserAccess::removeUserFromNoneIpmiGroupUsers(const std::string& userName)
++{
++    for (std::vector<std::string>::iterator it = listNoneIpmiGroupUsers.begin();
++         it != listNoneIpmiGroupUsers.end(); ++it)
++    {
++        if (*it == userName)
++        {
++            listNoneIpmiGroupUsers.erase(it);
++            break;
++        }
++    }
++
++    return ccSuccess;
++}
++
+ } // namespace ipmi
+diff --git a/user_channel/user_mgmt.hpp b/user_channel/user_mgmt.hpp
+index 06eff75..2a74f9f 100644
+--- a/user_channel/user_mgmt.hpp
++++ b/user_channel/user_mgmt.hpp
+@@ -455,9 +455,27 @@ class UserAccess
+     Cc setUserGroups(const uint8_t userId, const uint8_t chNum,
+                      const std::vector<std::string>& groupAccess);
+ 
++    /** @brief add userName to list of None Ipmi group users
++     *
++     * @param[in] userName - user name
++     *
++     * @return ccSuccess for success, others for failure.
++     */
++    Cc addUserToNonIpmiGroupUsers(const std::string& userName);
++
++    /** @brief remove userName to list of None Ipmi group users
++     *
++     * @param[in] userName - user name
++     *
++     * @return ccSuccess for success, others for failure.
++     */
++    Cc removeUserFromNoneIpmiGroupUsers(const std::string& userName);
++
+     std::unique_ptr<boost::interprocess::named_recursive_mutex> userMutex{
+         nullptr};
+ 
++    std::vector<std::string> listNoneIpmiGroupUsers{};
++
+   private:
+     UsersTbl usersTbl;
+     std::vector<std::string> availablePrivileges;
+-- 
+2.34.1
+
