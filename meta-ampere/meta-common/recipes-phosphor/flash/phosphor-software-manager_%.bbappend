@@ -5,6 +5,7 @@ SRC_URI += " \
              file://turn_on_host_after_flash.sh \
              file://turn-on-the-host-after-flash@.service \
              file://0001-BMC-Updater-Support-update-on-BMC-Alternate-device.patch \
+             file://0002-ItemUpdater-Erase-tmp-folder-when-erase-is-called.patch \
            "
 
 PACKAGECONFIG:append = " flash_bios static-dual-image"

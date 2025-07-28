@@ -1,0 +1,157 @@
+From f2bd15a7f761fb0f94f7e51a615982311f98ee61 Mon Sep 17 00:00:00 2001
+From: Chau Ly <chaul@amperecomputing.com>
+Date: Mon, 28 Jul 2025 03:42:19 +0000
+Subject: [PATCH] ItemUpdater: Erase tmp folder when erase() is called
+
+ItemUpdated::erase(std::string entryId) only erases interface objects
+(and RO partition + persist data in case of BMC firmware). For BIOS
+firmware upgrade, an erasement will leave off the image folders under
+$IMG_UPLOAD_DIR (aka `/tmp/images/`) which can lead to memory leak issue
+after many BIOS firmware upgrades without BMC reboot. This commit
+handles removing the temporary image folder when an erasement happens
+for the software entry.
+
+Tested:
+
+1. Execute BIOS firmware upgrade via Redfish for around 10 times
+
+token=`curl -k -H "Content-Type: application/json" -X POST \
+https://${BMC_IP}/login -d '{"username" :  "root", "password" :  \
+"0penBmc"}' | grep token | awk '{print $2;}' | tr -d '"'`
+
+uri=$(curl -k -H "X-Auth-Token: $token" \
+https://${BMC_IP}/redfish/v1/UpdateService | jq -r ' \
+.MultipartHttpPushUri')
+
+curl -k -H "X-Auth-Token: $token" -H "Content-Type:multipart/form-data" \
+-X POST -F UpdateParameters="{\"Targets\":[\
+"/redfish/v1/UpdateService/FirmwareInventory/bios_active\"], \
+"@Redfish.OperationApplyTime\":\"OnReset\"};type=application/json" -F \
+"UpdateFile=@${IMG_PATH}" https://${BMC_IP}${uri}
+
+Expected that no memory leak issue happens.
+
+Upstream-Status: Pending
+
+Signed-off-by: Chau Ly <chaul@amperecomputing.com>
+---
+ bmc/activation.cpp   |  7 ++++---
+ bmc/activation.hpp   | 11 ++++++++---
+ bmc/item_updater.cpp | 17 +++++++++++++----
+ 3 files changed, 25 insertions(+), 10 deletions(-)
+
+diff --git a/bmc/activation.cpp b/bmc/activation.cpp
+index a09b580..dbd0365 100644
+--- a/bmc/activation.cpp
++++ b/bmc/activation.cpp
+@@ -448,9 +448,10 @@ void Activation::onStateChangesBios(sdbusplus::message_t& msg)
+                 parent.versions.find(versionId)->second->version());
+ 
+             // Delete the uploaded activation
+-            boost::asio::post(getIOContext(), [this]() {
+-                this->parent.erase(this->versionId);
+-            });
++            ctx.spawn([](auto self) -> sdbusplus::async::task<> {
++                self->parent.erase(self->versionId);
++                co_return;
++            }(this));
+         }
+         else if (newStateResult == "failed")
+         {
+diff --git a/bmc/activation.hpp b/bmc/activation.hpp
+index 47da9b5..2386bd2 100644
+--- a/bmc/activation.hpp
++++ b/bmc/activation.hpp
+@@ -7,6 +7,7 @@
+ #include "xyz/openbmc_project/Software/ActivationProgress/server.hpp"
+ #include "xyz/openbmc_project/Software/RedundancyPriority/server.hpp"
+ 
++#include <sdbusplus/async.hpp>
+ #include <sdbusplus/server.hpp>
+ #include <xyz/openbmc_project/Association/Definitions/server.hpp>
+ #include <xyz/openbmc_project/Software/Activation/server.hpp>
+@@ -193,14 +194,15 @@ class Activation : public ActivationInherit, public Flash
+      * @param[in] activationStatus - The status of Activation
+      * @param[in] assocs - Association objects
+      */
+-    Activation(sdbusplus::bus_t& bus, const std::string& path,
++    Activation(sdbusplus::async::context& ctx, const std::string& path,
+                ItemUpdater& parent, std::string& versionId,
+                sdbusplus::server::xyz::openbmc_project::software::Activation::
+                    Activations activationStatus,
+                AssociationList& assocs) :
+-        ActivationInherit(bus, path.c_str(),
++        ActivationInherit(ctx.get_bus(), path.c_str(),
+                           ActivationInherit::action::defer_emit),
+-        bus(bus), path(path), parent(parent), versionId(versionId),
++        ctx(ctx), bus(ctx.get_bus()), path(path), parent(parent),
++        versionId(versionId),
+         systemdSignals(
+             bus,
+             sdbusRule::type::signal() + sdbusRule::member("JobRemoved") +
+@@ -309,6 +311,9 @@ class Activation : public ActivationInherit, public Flash
+      **/
+     void rebootBmc();
+ 
++    /** @brief D-Bus context */
++    sdbusplus::async::context& ctx;
++
+     /** @brief Persistent sdbusplus DBus bus connection */
+     sdbusplus::bus_t& bus;
+ 
+diff --git a/bmc/item_updater.cpp b/bmc/item_updater.cpp
+index 77c9a70..db1d336 100644
+--- a/bmc/item_updater.cpp
++++ b/bmc/item_updater.cpp
+@@ -150,7 +150,7 @@ void ItemUpdater::createActivationWithApplyTime(
+                         bmcInventoryPath));
+     activations.insert(std::make_pair(
+         id, std::make_unique<Activation>(
+-                bus, path, *this, id, server::Activation::Activations::NotReady,
++                ctx, path, *this, id, server::Activation::Activations::NotReady,
+                 associations)));
+     activations[id]->applyTime = applyTime;
+ }
+@@ -195,7 +195,7 @@ ActivationIntf::Activations ItemUpdater::verifyAndCreateObjects(
+     if (activation == activations.end())
+     {
+         activations.insert(std::make_pair(
+-            id, std::make_unique<Activation>(bus, path, *this, id,
++            id, std::make_unique<Activation>(ctx, path, *this, id,
+                                              activationState, associations)));
+     }
+     else
+@@ -397,7 +397,7 @@ void ItemUpdater::processBMCImage()
+             // Create Activation instance for this version.
+             activations.insert(std::make_pair(
+                 id, std::make_unique<Activation>(
+-                        bus, path, *this, id, activationState, associations)));
++                        ctx, path, *this, id, activationState, associations)));
+ 
+ #ifdef BMC_STATIC_DUAL_IMAGE
+             uint8_t priority;
+@@ -536,6 +536,15 @@ void ItemUpdater::erase(std::string entryId)
+             removePersistDataDirectory(flashId);
+             helper.clearEntry(flashId);
+         }
++        else
++        {
++            fs::path imageDirPath = flashId;
++            if (fs::exists(imageDirPath))
++            {
++                error("Erasing image temporary folder {ID}", "ID", flashId);
++                fs::remove_all(imageDirPath);
++            }
++        }
+ 
+         // Removing entry in versions map
+         this->versions.erase(entryId);
+@@ -964,7 +973,7 @@ void ItemUpdater::createBIOSObject()
+     auto version = "null";
+     AssociationList assocs;
+     biosActivation = std::make_unique<Activation>(
+-        bus, path, *this, versionId, server::Activation::Activations::Active,
++        ctx, path, *this, versionId, server::Activation::Activations::Active,
+         assocs);
+     auto dummyErase = [](const std::string& /*entryId*/) {
+         // Do nothing;
