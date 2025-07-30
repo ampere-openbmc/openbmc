@@ -1,4 +1,4 @@
-From 15c5660062fcaa8da9f7b64250f3c74a980e9c4b Mon Sep 17 00:00:00 2001
+From 66dea732cf9b0ac3a50df4acf962c8fc990ea6d3 Mon Sep 17 00:00:00 2001
 From: Huy Anh Le <hule@amperecomputing.com>
 Date: Thu, 29 May 2025 10:47:50 +0700
 Subject: [PATCH] fix: show manual lock after failed attempts
@@ -27,10 +27,10 @@ Signed-off-by: Huy Anh Le <hule@amperecomputing.com>
  1 file changed, 12 insertions(+), 3 deletions(-)
 
 diff --git a/user_mgr.cpp b/user_mgr.cpp
-index f4e745f..b6133ae 100644
+index 5c8fedc..f0a129f 100644
 --- a/user_mgr.cpp
 +++ b/user_mgr.cpp
-@@ -841,13 +841,22 @@ bool UserMgr::parseFaillockForLockout(
+@@ -843,13 +843,22 @@ bool UserMgr::parseFaillockForLockout(
          return false;
      }
  
@@ -57,5 +57,5 @@ index f4e745f..b6133ae 100644
  }
  
 -- 
-2.43.0
+2.34.1
 

@@ -1,0 +1,519 @@
+From 35936f584f381e0cd614c15d7d88a18c03356b62 Mon Sep 17 00:00:00 2001
+From: Thu Nguyen <thu@os.amperecomputing.com>
+Date: Thu, 31 Jul 2025 21:55:47 +0000
+Subject: [PATCH] Remove bootStrap Accounts on the service reset or host reset
+
+As section `Account life cycle` in DSP0270 v1.3.1, the bootstrap
+accounts should be removed upon service reset or host reset.
+Add code to support those behaviors.
+
+Tested:
+1. Create the bootstrap accounts using the IPMI command
+`GetBootStrapAccount` `ipmitool raw 0x2c 0x2 0x52 0xa5`.
+2. Check the existing of the bootstrap account in the user D-Bus
+interface, BMCweb, ipmi command and `/etc/passwd`.
+3. The bootstrap accounts should be removed after reset BMC, restart
+`User.Manager` service or reset host.
+
+Upstream-Status: Pending
+
+Change-Id: Ibe78f8b8c941966fb50ab80e7b181b8235533fad
+Signed-off-by: Thu Nguyen <thu@os.amperecomputing.com>
+---
+ user_mgr.cpp | 172 +++++++++++++++++++++++++++++++++++++++++++++++++--
+ user_mgr.hpp |  62 ++++++++++++++++++-
+ users.cpp    |  45 +++++++++++++-
+ users.hpp    |  15 +++++
+ 4 files changed, 286 insertions(+), 8 deletions(-)
+
+diff --git a/user_mgr.cpp b/user_mgr.cpp
+index 2286dc6..bb08f30 100644
+--- a/user_mgr.cpp
++++ b/user_mgr.cpp
+@@ -35,6 +35,8 @@
+ #include <phosphor-logging/elog-errors.hpp>
+ #include <phosphor-logging/elog.hpp>
+ #include <phosphor-logging/lg2.hpp>
++#include <sdbusplus/bus/match.hpp>
++#include <sdbusplus/message/types.hpp>
+ #include <xyz/openbmc_project/Common/error.hpp>
+ #include <xyz/openbmc_project/User/Common/error.hpp>
+ 
+@@ -86,6 +88,12 @@ static constexpr const char* objMapperPath =
+ static constexpr const char* objMapperInterface =
+     "xyz.openbmc_project.ObjectMapper";
+ 
++// Power state D-Bus related
++static constexpr const char* hostStatePath = "/xyz/openbmc_project/state/host0";
++static constexpr const char* hostStateInterface =
++    "xyz.openbmc_project.State.Host";
++static constexpr const char* currentHostStateProp = "CurrentHostState";
++
+ using namespace phosphor::logging;
+ using InsufficientPermission =
+     sdbusplus::xyz::openbmc_project::Common::Error::InsufficientPermission;
+@@ -107,6 +115,8 @@ using GroupNameExists =
+ using GroupNameDoesNotExists =
+     sdbusplus::xyz::openbmc_project::User::Common::Error::GroupNameDoesNotExist;
+ 
++namespace rules = sdbusplus::bus::match::rules;
++
+ namespace
+ {
+ constexpr auto mfaConfPath = "/var/lib/usr_mgr.conf";
+@@ -427,6 +437,7 @@ void UserMgr::deleteUser(std::string userName)
+         elog<InternalFailure>();
+     }
+ 
++    removeConfKey(bootStrapStateFile, userName);
+     usersList.erase(userName);
+     serializer.store();
+     lg2::info("User '{USERNAME}' deleted successfully", "USERNAME", userName);
+@@ -702,11 +713,26 @@ int UserMgr::getPamModuleConfValue(const std::string& confFile,
+     return failure;
+ }
+ 
+-int UserMgr::setPamModuleConfValue(const std::string& confFile,
+-                                   const std::string& argName,
+-                                   const std::string& argValue)
++int UserMgr::setPamModuleConfValue(
++    const std::string& confFile, const std::string& argName,
++    const std::string& argValue, const bool& createNew)
+ {
+     std::string tmpConfFile = confFile + "_tmp";
++    if (createNew)
++    {
++        /* Create confFile file if not exist */
++        std::ifstream checkFile(confFile);
++        if (!checkFile.good())
++        {
++            std::ofstream tempFile(confFile, std::ios::out);
++            tempFile.close();
++        }
++        else
++        {
++            checkFile.close();
++        }
++    }
++
+     std::ifstream fileToRead(confFile, std::ios::in);
+     std::ofstream fileToWrite(tmpConfFile, std::ios::out);
+     if (!fileToRead.is_open() || !fileToWrite.is_open())
+@@ -722,8 +748,10 @@ int UserMgr::setPamModuleConfValue(const std::string& confFile,
+     size_t startPos = 0;
+     size_t endPos = 0;
+     bool found = false;
++    bool emptyFile = true;
+     while (getline(fileToRead, line))
+     {
++        emptyFile = false;
+         // skip comments section starting with #
+         if ((startPos = line.find('#')) != std::string::npos)
+         {
+@@ -750,8 +778,52 @@ int UserMgr::setPamModuleConfValue(const std::string& confFile,
+         }
+         fileToWrite << line << std::endl;
+     }
+-    fileToWrite.close();
+-    fileToRead.close();
++    if (createNew && (emptyFile || !found))
++    {
++        auto argSearch = argName + "=";
++        fileToWrite << argSearch << argValue << std::endl;
++        found = true;
++    }
++
++    if (found)
++    {
++        if (std::rename(tmpConfFile.c_str(), confFile.c_str()) == 0)
++        {
++            return success;
++        }
++    }
++    // No changes, so delete the unused tmp file
++    std::remove(tmpConfFile.c_str());
++    return failure;
++}
++
++int UserMgr::removeConfKey(const std::string& confFile,
++                           const std::string& argName)
++{
++    std::string tmpConfFile = confFile + "_tmp";
++    std::ifstream fileToRead(confFile, std::ios::in);
++    std::ofstream fileToWrite(tmpConfFile, std::ios::out);
++    if (!fileToRead.is_open() || !fileToWrite.is_open())
++    {
++        lg2::error("Failed to open configuration file {FILENAME}", "FILENAME",
++                   confFile);
++        // Delete the unused tmp file
++        std::remove(tmpConfFile.c_str());
++        return failure;
++    }
++    std::string line;
++    auto argSearch = argName + "=";
++    bool found = false;
++    while (getline(fileToRead, line))
++    {
++        if ((line.find(argSearch)) != std::string::npos)
++        {
++            found = true;
++            continue;
++        }
++        fileToWrite << line << std::endl;
++    }
++
+     if (found)
+     {
+         if (std::rename(tmpConfFile.c_str(), confFile.c_str()) == 0)
+@@ -1471,6 +1543,7 @@ void UserMgr::initUserObjects(void)
+     // TODO  phosphor-user-manager#10 phosphor::user::shadow::Lock lock{};
+     std::vector<std::string> userNameList;
+     std::vector<std::string> sshGrpUsersList;
++    std::vector<std::string> bootStrapList{};
+     UserSSHLists userSSHLists = getUserAndSshGrpList();
+     userNameList = std::move(userSSHLists.first);
+     sshGrpUsersList = std::move(userSSHLists.second);
+@@ -1500,6 +1573,14 @@ void UserMgr::initUserObjects(void)
+ 
+         for (auto& user : userNameList)
+         {
++            std::string valueStr;
++            auto ret =
++                getPamModuleConfValue(bootStrapStateFile, user, valueStr);
++            if (ret == success && valueStr == "1")
++            {
++                bootStrapList.emplace_back(user);
++            }
++
+             std::vector<std::string> userGroups;
+             std::string userPriv;
+             for (const auto& grp : groupLists)
+@@ -1528,6 +1609,11 @@ void UserMgr::initUserObjects(void)
+                                         bus, objPath.c_str(), userGroups,
+                                         userPriv, isUserEnabled(user), *this));
+         }
++
++        for (auto& name : bootStrapList)
++        {
++            deleteUser(name);
++        }
+     }
+ }
+ 
+@@ -1551,7 +1637,14 @@ UserMgr::UserMgr(sdbusplus::bus_t& bus, const char* path) :
+     Ifaces(bus, path, Ifaces::action::defer_emit), bus(bus), path(path),
+     serializer(mfaConfPath), faillockConfigFile(defaultFaillockConfigFile),
+     pwHistoryConfigFile(defaultPWHistoryConfigFile),
+-    pwQualityConfigFile(defaultPWQualityConfigFile)
++    pwQualityConfigFile(defaultPWQualityConfigFile),
++    bootStrapStateFile(bootStrapAccountStateFile),
++    hostTransitionMatch(
++        bus,
++        rules::type::signal() + rules::member("PropertiesChanged") +
++            rules::interface("org.freedesktop.DBus.Properties") +
++            rules::path(hostStatePath) + rules::argN(0, hostStateInterface),
++        std::bind(&UserMgr::onPowerChanged, this, std::placeholders::_1))
+ 
+ {
+     UserMgrIface::allPrivileges(privMgr);
+@@ -1652,5 +1745,72 @@ bool UserMgr::secretKeyRequired(std::string userName)
+     }
+     return false;
+ }
++
++uint8_t UserMgr::updateBootStrapState(const std::string& userName,
++                                      const bool& bootStrapState)
++{
++    if (!usersList.contains(userName))
++    {
++        return failure;
++    }
++
++    if (setPamModuleConfValue(bootStrapAccountStateFile, userName,
++                              std::to_string(bootStrapState), true) != success)
++    {
++        lg2::error(
++            "Failed to backup the BootStrapAccount state {STATE} for user {NAME}",
++            "STATE", bootStrapState, "NAME", userName);
++        return failure;
++    }
++
++    return success;
++}
++
++void UserMgr::removeAllBootStrapAccount()
++{
++    std::vector<std::string> listUsers{};
++    for (auto& u : usersList)
++    {
++        listUsers.emplace_back(u.first);
++    }
++
++    for (auto& userName : listUsers)
++    {
++        const auto& user = usersList[userName];
++        if (user.get()->bootStrapAccount())
++        {
++            deleteUser(userName);
++        }
++    }
++}
++
++void UserMgr::onPowerChanged(sdbusplus::message_t& message)
++{
++    std::string objectName;
++    bool powerIsOn = false;
++    boost::container::flat_map<
++        std::string, std::variant<std::string, bool, int64_t, uint64_t, double>>
++        values;
++    message.read(objectName, values);
++    auto findState = values.find(currentHostStateProp);
++    if (findState == values.end())
++    {
++        return;
++    }
++
++    auto state = std::get<std::string>(findState->second);
++    if (std::get<std::string>(findState->second) ==
++        "xyz.openbmc_project.State.Host.HostState.Running")
++    {
++        powerIsOn = true;
++    }
++
++    if (!powerIsOn)
++    {
++        removeAllBootStrapAccount();
++        initializeCredentialBootstraping();
++    }
++}
++
+ } // namespace user
+ } // namespace phosphor
+diff --git a/user_mgr.hpp b/user_mgr.hpp
+index e156762..1143e2a 100644
+--- a/user_mgr.hpp
++++ b/user_mgr.hpp
+@@ -45,6 +45,30 @@ namespace phosphor
+ namespace user
+ {
+ 
++static constexpr const char* bootStrapAccountStateFile = "/etc/bootStrap.conf";
++
++// User manager D-Bus related
++static constexpr const char* userMgrService =
++    "xyz.openbmc_project.User.Manager";
++static constexpr const char* userMgrObjBasePath = "/xyz/openbmc_project/user";
++static constexpr const char* userObjBasePath = "/xyz/openbmc_project/user";
++static constexpr const char* userMgrInterface =
++    "xyz.openbmc_project.User.Manager";
++static constexpr const char* usersInterface =
++    "xyz.openbmc_project.User.Attributes";
++static constexpr const char* deleteUserInterface =
++    "xyz.openbmc_project.Object.Delete";
++
++static constexpr const char* createUserMethod = "CreateUser";
++static constexpr const char* deleteUserMethod = "Delete";
++static constexpr const char* renameUserMethod = "RenameUser";
++
++// User interface properties
++static constexpr const char* userPrivProperty = "UserPrivilege";
++static constexpr const char* userGrpProperty = "UserGroups";
++static constexpr const char* userEnabledProperty = "UserEnabled";
++static constexpr const char* userIsBootStrapProperty = "BootStrapAccount";
++
+ inline constexpr size_t ipmiMaxUsers = 15;
+ inline constexpr size_t maxSystemUsers = 30;
+ inline constexpr uint8_t minPasswdLength = 8;
+@@ -369,6 +393,16 @@ class UserMgr : public Ifaces
+         return serializer;
+     }
+ 
++    /** @brief update BootStrapAccount backup state
++     *
++     * @param[in]: user name
++     * @param[in]: bootStrapState bootStrap Account state
++     *
++     * @return - returns 0 on success otherwise return -1
++     */
++    uint8_t updateBootStrapState(const std::string& userName,
++                                 const bool& bootStrapState);
++
+   protected:
+     /** @brief get pam argument value
+      *  method to get argument value from pam configuration
+@@ -417,12 +451,24 @@ class UserMgr : public Ifaces
+      * value has to be set
+      *  @param[in] argName - argument name
+      *  @param[out] argValue - argument value
++     *  @param[in] createNew - create file or new configuration field if needs
+      *
+      *  @return 0 - success state of the function
+      */
+     int setPamModuleConfValue(const std::string& confFile,
+                               const std::string& argName,
+-                              const std::string& argValue);
++                              const std::string& argValue,
++                              const bool& createNew = false);
++
++    /** @brief remove argument from the configuration/storage file
++     *
++     *  @param[in] confFile - path of the module config file in which argument
++     * value has to be set
++     *  @param[in] argName - argument name
++     *
++     *  @return 0 - success state of the function
++     */
++    int removeConfKey(const std::string& confFile, const std::string& argName);
+ 
+     /** @brief check for user presence
+      *  method to check for user existence
+@@ -606,11 +652,25 @@ class UserMgr : public Ifaces
+      */
+     virtual DbusUserObj getPrivilegeMapperObject(void);
+ 
++    /** @brief remove all bootStrap account when the CurrentHostState transition
++     *  to not running
++     *
++     */
++    void removeAllBootStrapAccount(void);
++
++    /** @brief the handle of the property change signal of CurrentHostState
++     *  property in xyz.openbmc_project.State.Host interface.
++     */
++    void onPowerChanged(sdbusplus::message_t& message);
++
+     friend class TestUserMgr;
+ 
+     std::string faillockConfigFile;
+     std::string pwHistoryConfigFile;
+     std::string pwQualityConfigFile;
++    std::string bootStrapStateFile;
++
++    sdbusplus::bus::match_t hostTransitionMatch;
+ };
+ 
+ } // namespace user
+diff --git a/users.cpp b/users.cpp
+index 12d6c22..99673f2 100644
+--- a/users.cpp
++++ b/users.cpp
+@@ -26,9 +26,12 @@
+ #include <sys/wait.h>
+ #include <unistd.h>
+ 
++#include <boost/container/flat_map.hpp>
+ #include <phosphor-logging/elog-errors.hpp>
+ #include <phosphor-logging/elog.hpp>
+ #include <phosphor-logging/lg2.hpp>
++#include <sdbusplus/bus/match.hpp>
++#include <sdbusplus/message/types.hpp>
+ #include <xyz/openbmc_project/Common/error.hpp>
+ #include <xyz/openbmc_project/User/Common/error.hpp>
+ 
+@@ -53,6 +56,9 @@ using UnsupportedRequest =
+     sdbusplus::xyz::openbmc_project::Common::Error::UnsupportedRequest;
+ 
+ using Argument = xyz::openbmc_project::Common::InvalidArgument;
++
++namespace rules = sdbusplus::bus::match::rules;
++
+ static constexpr auto authAppPath = "/usr/bin/google-authenticator";
+ static constexpr auto secretKeyPath = "/home/{}/.google_authenticator";
+ static constexpr auto secretKeyTempPath =
+@@ -71,7 +77,14 @@ Users::Users(sdbusplus::bus_t& bus, const char* path,
+              std::vector<std::string> groups, std::string priv, bool enabled,
+              UserMgr& parent) :
+     Interfaces(bus, path, Interfaces::action::defer_emit),
+-    userName(sdbusplus::message::object_path(path).filename()), manager(parent)
++    userName(sdbusplus::message::object_path(path).filename()), manager(parent),
++    bootStrapAccountMatch(
++        bus,
++        rules::type::signal() + rules::member("PropertiesChanged") +
++            rules::interface("org.freedesktop.DBus.Properties") +
++            rules::path(path) + rules::argN(0, usersInterface),
++        std::bind(&Users::onBootStrapAccountChanged, this,
++                  std::placeholders::_1))
+ {
+     UsersIface::userPrivilege(priv, true);
+     UsersIface::userGroups(groups, true);
+@@ -386,5 +399,35 @@ void Users::load(JsonSerializer& ts)
+                            MultiFactorAuthType::None));
+ }
+ 
++/** @brief lists user enabled state
++ *
++ */
++bool Users::bootStrapAccount(void)
++{
++    return UsersIface::bootStrapAccount();
++}
++
++void Users::onBootStrapAccountChanged(sdbusplus::message_t& message)
++{
++    std::string objectName;
++    bool isBootStrap = false;
++    boost::container::flat_map<
++        std::string, std::variant<std::string, bool, int64_t, uint64_t, double>>
++        values;
++    message.read(objectName, values);
++    auto findState = values.find(userIsBootStrapProperty);
++    if (findState == values.end())
++    {
++        return;
++    }
++    isBootStrap = std::get<bool>(findState->second);
++
++    if (manager.updateBootStrapState(userName, isBootStrap))
++    {
++        lg2::error("Unable to update property {PROP} to {VALUE}", "PROP",
++                   userIsBootStrapProperty, "VALUE", isBootStrap);
++    }
++}
++
+ } // namespace user
+ } // namespace phosphor
+diff --git a/users.hpp b/users.hpp
+index 39c3ec3..944ba09 100644
+--- a/users.hpp
++++ b/users.hpp
+@@ -17,11 +17,13 @@
+ #include "json_serializer.hpp"
+ 
+ #include <sdbusplus/bus.hpp>
++#include <sdbusplus/bus/match.hpp>
+ #include <sdbusplus/server/object.hpp>
+ #include <xyz/openbmc_project/Object/Delete/server.hpp>
+ #include <xyz/openbmc_project/User/Attributes/server.hpp>
+ #include <xyz/openbmc_project/User/MultiFactorAuthConfiguration/server.hpp>
+ #include <xyz/openbmc_project/User/TOTPAuthenticator/server.hpp>
++
+ namespace phosphor
+ {
+ namespace user
+@@ -145,10 +147,23 @@ class Users : public Interfaces
+     void enableMultiFactorAuth(MultiFactorAuthType type, bool value);
+     void load(JsonSerializer& serializer);
+ 
++    /** @brief get bootStrapAccount state
++     *
++     */
++    bool bootStrapAccount(void);
++
+   private:
+     bool checkMfaStatus() const;
++
++    /** @brief the handle of the property change signal of BootStrapAccount
++     *  property in xyz.openbmc_project.User.Attributes interface.
++     */
++    void onBootStrapAccountChanged(sdbusplus::message_t& message);
++
+     std::string userName;
+     UserMgr& manager;
++    /* Match the change in the BootStrapAccount property */
++    sdbusplus::bus::match_t bootStrapAccountMatch;
+ };
+ 
+ } // namespace user
+-- 
+2.34.1
+
