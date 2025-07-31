@@ -1,0 +1,102 @@
+From 8a9254579e3f9acecd735a66b5ec1359754fd4b2 Mon Sep 17 00:00:00 2001
+From: Huy Anh Le <hule@amperecomputing.com>
+Date: Thu, 31 Jul 2025 13:59:50 +0700
+Subject: [PATCH] Detect BMC firmware image update and trigger reboot after
+ upload
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Problem:
+ Currently, updating BMC Firmware via WebUI displays an error,
+ even though the update completes successfully when viewed from
+ the BMC Console. This occurs because ApplyTime is set to Immediate,
+ which causes the BMC to automatically reboot for the firmware update.
+ As a result, the Redfish TaskURL becomes unreachable,
+ preventing the WebUI from checking for task completion.
+This commit resolves this by:
+ - Adding state and getter to track BMC firmware update status.
+ - Updating the mutation to detect BMC firmware changes.
+ - Changing @Redfish.OperationApplyTime from Immediate to OnReset.
+ - Adding a rebootBmc action to allow controlled BMC reboot.
+ - After firmware upload, checking the update flag and triggering
+   a BMC reboot automatically if an update is detected.
+
+Tested:
+ - On WebUI: Added BMC firmware file > Started Update.
+ - Result: No error pop-up, BMC reboots to write the new
+   firmware image as expected.
+
+Upstream-Status: Pending
+
+Signed-off-by: Huy Anh Le <hule@amperecomputing.com>
+---
+ src/store/modules/Operations/FirmwareStore.js        | 12 +++++++++++-
+ src/views/Operations/Firmware/FirmwareFormUpdate.vue | 11 +++++++++++
+ 2 files changed, 22 insertions(+), 1 deletion(-)
+
+diff --git a/src/store/modules/Operations/FirmwareStore.js b/src/store/modules/Operations/FirmwareStore.js
+index cfc24cf..b0a752c 100644
+--- a/src/store/modules/Operations/FirmwareStore.js
++++ b/src/store/modules/Operations/FirmwareStore.js
+@@ -11,9 +11,11 @@ const FirmwareStore = {
+     applyTime: null,
+     multipartHttpPushUri: null,
+     httpPushUri: null,
++    isBmcFirmwareUpdated: false,
+   },
+   getters: {
+     isSingleFileUploadEnabled: (state) => state.biosFirmware.length === 0,
++    isBmcFirmwareUpdated: (state) => state.isBmcFirmwareUpdated,
+     activeBmcFirmware: (state) => {
+       return state.bmcFirmware.find(
+         (firmware) => firmware.id === state.bmcActiveFirmwareId,
+@@ -38,7 +40,13 @@ const FirmwareStore = {
+   mutations: {
+     setActiveBmcFirmwareId: (state, id) => (state.bmcActiveFirmwareId = id),
+     setActiveBiosFirmwareId: (state, id) => (state.biosActiveFirmwareId = id),
+-    setBmcFirmware: (state, firmware) => (state.bmcFirmware = firmware),
++    setBmcFirmware: (state, firmware) => {
++      const isDifferent =
++        state.bmcFirmware.length > 0 &&
++        JSON.stringify(state.bmcFirmware) !== JSON.stringify(firmware);
++      state.bmcFirmware = firmware;
++      state.isBmcFirmwareUpdated = isDifferent;
++    },
+     setBiosFirmware: (state, firmware) => (state.biosFirmware = firmware),
+     setApplyTime: (state, applyTime) => (state.applyTime = applyTime),
+     setHttpPushUri: (state, httpPushUri) => (state.httpPushUri = httpPushUri),
+@@ -150,6 +158,8 @@ const FirmwareStore = {
+         // when bmcweb is updated
+         params.Targets = [`${await this.dispatch('global/getBmcPath')}`];
+       }
++      // Set AppyTime to OnReset
++      params['@Redfish.OperationApplyTime'] = 'OnReset';
+       formData.append('UpdateParameters', JSON.stringify(params));
+       return await api
+         .post(state.multipartHttpPushUri, formData, {
+diff --git a/src/views/Operations/Firmware/FirmwareFormUpdate.vue b/src/views/Operations/Firmware/FirmwareFormUpdate.vue
+index 3773935..bdd3422 100644
+--- a/src/views/Operations/Firmware/FirmwareFormUpdate.vue
++++ b/src/views/Operations/Firmware/FirmwareFormUpdate.vue
+@@ -111,6 +111,17 @@ export default {
+           if (isCompleted) {
+             this.showErrorToast();
+             clearTimeout(timerId);
++
++            this.$store.dispatch('firmware/getFirmwareInformation').then(() => {
++              const isBmcFirmwareUpdated =
++                this.$store.getters['firmware/isBmcFirmwareUpdated'];
++              if (isBmcFirmwareUpdated) {
++                this.$store
++                  .dispatch('controls/rebootBmc')
++                  .then((message) => this.successToast(message))
++                  .catch(({ message }) => this.errorToast(message));
++              }
++            });
+           }
+         })
+         .catch(({ message }) => {
+-- 
+2.43.0
+
