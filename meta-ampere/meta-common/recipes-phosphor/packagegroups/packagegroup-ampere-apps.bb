@@ -30,7 +30,6 @@ RDEPENDS:${PN}-chassis = " \
         ampere-ipmi-oem \
         ampere-driver-binder \
         ampere-misc \
-        bootstrap-account \
         "
 
 SUMMARY:${PN}-system = "Ampere System"
