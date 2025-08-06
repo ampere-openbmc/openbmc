@@ -14,6 +14,9 @@ SRC_URI += " \
             file://0004-adcsensor-support-PresenceGpio-option.patch \
             file://0005-psusensor-monitor-interfaceAdded-signal-for-CPU-obje.patch \
             file://0006-nvmesensor-Enale-PEC-checking-to-smbus-driver.patch \
+            file://0007-intrusionsensor-Initial-value-read-for-GPIO-type.patch \
+            file://0008-intrusionsensor-Changes-to-sensor-object-path.patch \
+            file://0009-intrusionsensor-Add-association-with-chassis.patch \
             file://adcsensor.service-override.conf \
            "
 

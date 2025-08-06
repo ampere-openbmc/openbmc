@@ -1,0 +1,225 @@
+From 03ea96d48e8ba6031bd454a0c86a6c1583af1203 Mon Sep 17 00:00:00 2001
+From: Chau Ly <chaul@amperecomputing.com>
+Date: Fri, 1 Dec 2023 04:05:24 +0000
+Subject: [PATCH] intrusionsensor: Add association with chassis
+
+Chassis intrusion sensor does not have the Sensor.Value interface to be
+legit into the "sensors" association with the chassis but there's a need
+to associate the sensor with the chassis that it is monitoring physical
+security state.
+
+The commit [1] in PDI introduces the monitoring/monitored_by association
+between a chassis intrusion sensor and the inventory item that it is
+currently monitoring the physical security state.
+
+This commit adds the association interface to the sensor, and creates
+the monitoring/monitored_by association between it and the inventory
+object path of the item that it is configured in.
+
+[1] https://github.com/openbmc/phosphor-dbus-interfaces/commit/6cfd0d08a7083263102cb8e7a216f818a4c210eb
+
+Tested in Ampere's MtMitchell platform:
+
+The sensor is configured in the motherboard's Entity Manager json
+
+$ busctl tree xyz.openbmc_project.ObjectMapper | grep -i -e monitored \
+-e monitoring
+
+|-/xyz/openbmc_project/chassis/<sensor_name>/monitoring
+|-/xyz/openbmc_project/inventory/system/board/Mt_Mitchell_Motherboard/mo
+nitored_by
+
+$ busctl get-property xyz.openbmc_project.ObjectMapper \
+/xyz/openbmc_project/chassis/<sensor_name>/monitoring \
+xyz.openbmc_project.Association endpoints
+
+as 1 "/xyz/openbmc_project/inventory/system/board/\
+Mt_Mitchell_Motherboard"
+
+$ busctl get-property xyz.openbmc_project.IntrusionSensor \
+/xyz/openbmc_project/chassis/<sensor_name> \
+xyz.openbmc_project.Association.Definitions Associations
+
+a(sss) 1 "monitoring" "monitored_by" "/xyz/openbmc_project/inventory/sys
+tem/board/Mt_Mitchell_Motherboard"
+
+Upstream-Status: Submitted [https://gerrit.openbmc.org/c/openbmc/dbus-sensors/+/68060]
+
+Signed-off-by: Chau Ly <chaul@amperecomputing.com>
+Change-Id: Ibe686816dda0dea0c06210cf8e5b53fe74ffba79
+---
+ src/intrusion/ChassisIntrusionSensor.cpp | 29 ++++++++++++++++++------
+ src/intrusion/ChassisIntrusionSensor.hpp | 26 +++++++++++----------
+ src/intrusion/IntrusionSensorMain.cpp    |  8 ++++---
+ 3 files changed, 41 insertions(+), 22 deletions(-)
+
+diff --git a/src/intrusion/ChassisIntrusionSensor.cpp b/src/intrusion/ChassisIntrusionSensor.cpp
+index 3a36ce7..02c3906 100644
+--- a/src/intrusion/ChassisIntrusionSensor.cpp
++++ b/src/intrusion/ChassisIntrusionSensor.cpp
+@@ -329,7 +329,7 @@ void ChassisIntrusionSensor::start()
+ 
+ ChassisIntrusionSensor::ChassisIntrusionSensor(
+     const std::string& name, bool autoRearm, boost::asio::io_context& io,
+-    sdbusplus::asio::object_server& objServer) :
++    const std::string& confPath, sdbusplus::asio::object_server& objServer) :
+     mValue(normalValStr), mAutoRearm(autoRearm), mPollTimer(io),
+     mObjServer(objServer)
+ {
+@@ -344,12 +344,24 @@ ChassisIntrusionSensor::ChassisIntrusionSensor(
+     std::string rearmStr = mAutoRearm ? autoRearmStr : manualRearmStr;
+     mIface->register_property("Rearm", rearmStr);
+     mIface->initialize();
++    mAssocIface = mObjServer.add_interface(sensorPath, association::interface);
++    if (mAssocIface)
++    {
++        std::filesystem::path path(confPath);
++
++        std::vector<Association> associations;
++        associations.emplace_back("monitoring", "monitored_by",
++                                  path.parent_path().string());
++        mAssocIface->register_property("Associations", associations);
++        mAssocIface->initialize();
++    }
+ }
+ 
+ ChassisIntrusionPchSensor::ChassisIntrusionPchSensor(
+     const std::string& name, bool autoRearm, boost::asio::io_context& io,
+-    sdbusplus::asio::object_server& objServer, int busId, int slaveAddr) :
+-    ChassisIntrusionSensor(name, autoRearm, io, objServer)
++    const std::string& confPath, sdbusplus::asio::object_server& objServer,
++    int busId, int slaveAddr) :
++    ChassisIntrusionSensor(name, autoRearm, io, confPath, objServer)
+ {
+     if (busId < 0 || slaveAddr <= 0)
+     {
+@@ -391,8 +403,9 @@ ChassisIntrusionPchSensor::ChassisIntrusionPchSensor(
+ 
+ ChassisIntrusionGpioSensor::ChassisIntrusionGpioSensor(
+     const std::string& name, bool autoRearm, boost::asio::io_context& io,
+-    sdbusplus::asio::object_server& objServer, bool gpioInverted) :
+-    ChassisIntrusionSensor(name, autoRearm, io, objServer),
++    const std::string& confPath, sdbusplus::asio::object_server& objServer,
++    bool gpioInverted) :
++    ChassisIntrusionSensor(name, autoRearm, io, confPath, objServer),
+     mGpioInverted(gpioInverted), mGpioFd(io)
+ {
+     mGpioLine = gpiod::find_line(mPinName);
+@@ -416,8 +429,9 @@ ChassisIntrusionGpioSensor::ChassisIntrusionGpioSensor(
+ 
+ ChassisIntrusionHwmonSensor::ChassisIntrusionHwmonSensor(
+     const std::string& name, bool autoRearm, boost::asio::io_context& io,
+-    sdbusplus::asio::object_server& objServer, std::string hwmonName) :
+-    ChassisIntrusionSensor(name, autoRearm, io, objServer),
++    const std::string& confPath, sdbusplus::asio::object_server& objServer,
++    std::string hwmonName) :
++    ChassisIntrusionSensor(name, autoRearm, io, confPath, objServer),
+     mHwmonName(std::move(hwmonName))
+ {
+     std::vector<std::filesystem::path> paths;
+@@ -455,6 +469,7 @@ ChassisIntrusionSensor::~ChassisIntrusionSensor()
+ {
+     mPollTimer.cancel();
+     mObjServer.remove_interface(mIface);
++    mObjServer.remove_interface(mAssocIface);
+ }
+ 
+ ChassisIntrusionPchSensor::~ChassisIntrusionPchSensor()
+diff --git a/src/intrusion/ChassisIntrusionSensor.hpp b/src/intrusion/ChassisIntrusionSensor.hpp
+index ed624fa..c1c40cc 100644
+--- a/src/intrusion/ChassisIntrusionSensor.hpp
++++ b/src/intrusion/ChassisIntrusionSensor.hpp
+@@ -14,9 +14,9 @@ class ChassisIntrusionSensor :
+     public std::enable_shared_from_this<ChassisIntrusionSensor>
+ {
+   public:
+-    explicit ChassisIntrusionSensor(const std::string& name, bool autoRearm,
+-                                    boost::asio::io_context& io,
+-                                    sdbusplus::asio::object_server& objServer);
++    explicit ChassisIntrusionSensor(
++        const std::string& name, bool autoRearm, boost::asio::io_context& io,
++        const std::string& confPath, sdbusplus::asio::object_server& objServer);
+ 
+     virtual ~ChassisIntrusionSensor();
+ 
+@@ -33,6 +33,7 @@ class ChassisIntrusionSensor :
+     bool mAutoRearm;
+     boost::asio::steady_timer mPollTimer;
+     std::shared_ptr<sdbusplus::asio::dbus_interface> mIface;
++    std::shared_ptr<sdbusplus::asio::dbus_interface> mAssocIface;
+     sdbusplus::asio::object_server& mObjServer;
+     bool mOverridenState = false;
+     bool mInternalSet = false;
+@@ -44,10 +45,10 @@ class ChassisIntrusionSensor :
+ class ChassisIntrusionPchSensor : public ChassisIntrusionSensor
+ {
+   public:
+-    ChassisIntrusionPchSensor(const std::string& name, bool autoRearm,
+-                              boost::asio::io_context& io,
+-                              sdbusplus::asio::object_server& objServer,
+-                              int busId, int slaveAddr);
++    ChassisIntrusionPchSensor(
++        const std::string& name, bool autoRearm, boost::asio::io_context& io,
++        const std::string& confPath, sdbusplus::asio::object_server& objServer,
++        int busId, int slaveAddr);
+ 
+     ~ChassisIntrusionPchSensor() override;
+ 
+@@ -60,10 +61,10 @@ class ChassisIntrusionPchSensor : public ChassisIntrusionSensor
+ class ChassisIntrusionGpioSensor : public ChassisIntrusionSensor
+ {
+   public:
+-    ChassisIntrusionGpioSensor(const std::string& name, bool autoRearm,
+-                               boost::asio::io_context& io,
+-                               sdbusplus::asio::object_server& objServer,
+-                               bool gpioInverted);
++    ChassisIntrusionGpioSensor(
++        const std::string& name, bool autoRearm, boost::asio::io_context& io,
++        const std::string& confPath, sdbusplus::asio::object_server& objServer,
++        bool gpioInverted);
+ 
+     ~ChassisIntrusionGpioSensor() override;
+ 
+@@ -83,7 +84,8 @@ class ChassisIntrusionHwmonSensor : public ChassisIntrusionSensor
+   public:
+     ChassisIntrusionHwmonSensor(
+         const std::string& name, bool autoRearm, boost::asio::io_context& io,
+-        sdbusplus::asio::object_server& objServer, std::string hwmonName);
++        const std::string& confPath, sdbusplus::asio::object_server& objServer,
++        std::string hwmonName);
+ 
+     ~ChassisIntrusionHwmonSensor() override = default;
+ 
+diff --git a/src/intrusion/IntrusionSensorMain.cpp b/src/intrusion/IntrusionSensorMain.cpp
+index 3d48653..d80fac4 100644
+--- a/src/intrusion/IntrusionSensorMain.cpp
++++ b/src/intrusion/IntrusionSensorMain.cpp
+@@ -138,7 +138,8 @@ static void createSensorsFromConfig(
+                         (std::get<std::string>(findGpioPolarity->second) ==
+                          "Low");
+                     pSensor = std::make_shared<ChassisIntrusionGpioSensor>(
+-                        sensorName, autoRearm, io, objServer, gpioInverted);
++                        sensorName, autoRearm, io, path, objServer,
++                        gpioInverted);
+                     pSensor->start();
+                     if (debug)
+                     {
+@@ -179,7 +180,7 @@ static void createSensorsFromConfig(
+                 try
+                 {
+                     pSensor = std::make_shared<ChassisIntrusionHwmonSensor>(
+-                        sensorName, autoRearm, io, objServer, hwmonName);
++                        sensorName, autoRearm, io, path, objServer, hwmonName);
+                     pSensor->start();
+                     return;
+                 }
+@@ -206,7 +207,8 @@ static void createSensorsFromConfig(
+                     int busId = std::get<uint64_t>(findBus->second);
+                     int slaveAddr = std::get<uint64_t>(findAddress->second);
+                     pSensor = std::make_shared<ChassisIntrusionPchSensor>(
+-                        sensorName, autoRearm, io, objServer, busId, slaveAddr);
++                        sensorName, autoRearm, io, path, objServer, busId,
++                        slaveAddr);
+                     pSensor->start();
+                     if (debug)
+                     {
