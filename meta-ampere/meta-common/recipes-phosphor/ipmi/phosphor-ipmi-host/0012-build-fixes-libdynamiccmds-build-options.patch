@@ -1,0 +1,51 @@
+From d2cba3d21cfb57ac881cea03f1424c56afd44ed7 Mon Sep 17 00:00:00 2001
+From: Khang D Nguyen <khangng@os.amperecomputing.com>
+Date: Wed, 6 Aug 2025 09:42:07 +0700
+Subject: [PATCH] build: fixes libdynamiccmds build options
+
+Fixes a mistake introduced by the previous patchset to use allowed() for
+build options:
+
+- Original:
+
+'''
+if not get_option('dynamic-sensors').disabled() or not get_option('tests').disabled()
+'''
+
+- Expected:
+
+'''
+if get_option('dynamic-sensors').allowed() or get_option('tests').allowed()
+'''
+
+- Actual:
+
+'''
+if get_option('dynamic-sensors').disabled() or not get_option('tests').allowed()
+'''
+
+This might be caused by mistakenly pattern matching the leading `not`
+and trailing `disabled` without taking into account multiple conditions.
+
+Upstream-Status: Submitted [https://gerrit.openbmc.org/c/openbmc/phosphor-host-ipmid/+/82576]
+
+Fixes: ed7dbeff (build: use allowed over enabled or not-disabled)
+Change-Id: I6a6a6964db49144b0a9d979a797a247c4e5927a6
+Signed-off-by: Khang D Nguyen <khangng@os.amperecomputing.com>
+---
+ meson.build | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/meson.build b/meson.build
+index efb1b83..3dff44c 100644
+--- a/meson.build
++++ b/meson.build
+@@ -341,7 +341,7 @@ executable(
+ # Dynamic Sensor Stack
+ subdir('dbus-sdr')
+ 
+-if get_option('dynamic-sensors').disabled() or not get_option('tests').allowed()
++if get_option('dynamic-sensors').allowed() or get_option('tests').allowed()
+     library(
+         'dynamiccmds',
+         dbus_sdr_src,
