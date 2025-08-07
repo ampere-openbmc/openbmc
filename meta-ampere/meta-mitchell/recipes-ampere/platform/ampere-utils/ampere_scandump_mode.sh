@@ -47,7 +47,7 @@ handle_dependencies() {
 		done
 		# Disable fan control
 		/usr/sbin/ampere_fanctrl.sh setstatus 1
-		/usr/sbin/ampere_fanctrl.sh setspeed all 100
+		/usr/sbin/ampere_fanctrl.sh setspeed force all 100
 	fi
 }
 

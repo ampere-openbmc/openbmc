@@ -23,7 +23,7 @@ function post-platform-init() {
     gpioset $(gpiofind host0-sysreset-n)=1
 
     echo "Set default FAN speed to 60%"
-    /usr/sbin/ampere_fanctrl.sh setspeed all 60
+    /usr/sbin/ampere_fanctrl.sh setspeed force all 60
 }
 
 export output_high_gpios_in_ac=(
