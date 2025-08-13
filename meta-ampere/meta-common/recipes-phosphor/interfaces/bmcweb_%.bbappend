@@ -4,6 +4,7 @@ EXTRA_OEMESON:append = " \
      -Dhttp-body-limit=65 \
      -Dadditional-bind-to-device="usb0" \
      -Dadditional-ports="440" \
+     -Dadditional-support-bootstrap-credential="enabled" \
 "
 
 PACKAGECONFIG:append = " \
@@ -33,6 +34,8 @@ SRC_URI += " \
             file://0016-Support-to-show-more-options-in-Device-Type-and-Medi.patch \
             file://0017-Property-addition-under-FirmwareInventory.patch \
             file://0018-update-the-association-names-of-PCIe-inventory.patch \
+            file://0019-Fix-runtime-error-when-add-additional-ports-configur.patch \
+            file://0020-Restrict-bootStrap-accounts-for-the-socket-support-t.patch \
             file://ampere-registries.json \
            "
 do_compile[network] = "1"

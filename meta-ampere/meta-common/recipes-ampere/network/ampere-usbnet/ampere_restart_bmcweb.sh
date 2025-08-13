@@ -1,11 +1,18 @@
 #!/bin/bash
+units=(
+    bmcweb_440.socket
+    bmcweb.socket
+    bmcweb.service
+)
 
-systemctl stop bmcweb_440.socket
-systemctl stop bmcweb.socket
-systemctl stop bmcweb.service
+for unit in "${units[@]}"; do
+    systemctl stop "$unit"
+done
 
+# Wait for 1 second
 sleep 1s
 
-systemctl start bmcweb_440.socket
-systemctl start bmcweb.socket
-systemctl start bmcweb.service
+for unit in "${units[@]}"; do
+    systemctl start "$unit"
+done
+

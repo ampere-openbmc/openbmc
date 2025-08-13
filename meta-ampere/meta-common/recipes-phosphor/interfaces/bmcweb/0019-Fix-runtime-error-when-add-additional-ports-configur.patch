@@ -1,0 +1,53 @@
+From 6ec0c554c83441e894693c11b7897460e67b8d37 Mon Sep 17 00:00:00 2001
+From: Thu Nguyen <thu@os.amperecomputing.com>
+Date: Tue, 12 Aug 2025 13:49:54 +0000
+Subject: [PATCH] Fix runtime error when add `additional-ports` configuration
+
+The bmcweb has runtime errors when adding `additional-ports`
+configuration.
+
+```text
+Dec 19 21:25:54 board systemd[1]: sockets.target: Wants dependency dropin /etc/systemd/system/sockets.target.wants/bmcweb_440 is not a valid unit name, ignoring.
+```
+
+and
+
+```text
+Dec 19 21:25:54 board systemd[1]: bmcweb_440.socket: Unit has no Listen setting (ListenStream=, ListenDatagram=, ListenFIFO=, ...). Refusing.
+Dec 19 21:25:54 board systemd[1]: bmcweb_440.socket: Cannot add dependency job, ignoring: Unit bmcweb_440.socket has a bad unit file setting.
+```
+
+Update the code to fix that.
+
+Upstream-Status: Pending
+
+Signed-off-by: Thu Nguyen <thu@os.amperecomputing.com>
+---
+ config/meson.build | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/config/meson.build b/config/meson.build
+index 7a5524c2..d6f76df2 100644
+--- a/config/meson.build
++++ b/config/meson.build
+@@ -153,7 +153,7 @@ foreach index : range(ports.length())
+         auth = auths[index]
+     endif
+ 
+-    filename = 'bmcweb_' + port_number
++    filename = 'bmcweb_' + port_number + '.socket'
+     configure_file(
+         input: 'bmcweb.socket.in',
+         output: filename,
+@@ -161,7 +161,7 @@ foreach index : range(ports.length())
+         install: true,
+         configuration: configuration_data(
+             {
+-                'BMCWEB_HTTPS_PORT': port_number,
++                'BMCWEB_PORT': port_number,
+                 'HTTP_LEVEL_ALLOWED': 'https',
+                 'HTTP_BIND': bind_to_device,
+                 'HTTP_AUTH_LEVEL': auth,
+-- 
+2.34.1
+

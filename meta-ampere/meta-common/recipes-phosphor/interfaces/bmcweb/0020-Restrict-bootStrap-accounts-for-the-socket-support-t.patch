@@ -1,0 +1,427 @@
+From 73eb8be2042d78e02a0368c6c01baa4f95e0289b Mon Sep 17 00:00:00 2001
+From: Thu Nguyen <thu@os.amperecomputing.com>
+Date: Tue, 12 Aug 2025 11:44:44 +0000
+Subject: [PATCH] Restrict bootStrap accounts for the socket support them
+
+Adds the option `additional-support-bootstrap-credetial` to setting the
+`additional-ports` supports bootStrap credential or not.  The ports with
+the corresponding `additional-support-bootstrap-credetial` value are
+`enabled` will support bootStrap account.
+
+The `additional-bind-to-device` option can be added to specify the
+ethernet interface  will be used for the redfish request which uses the
+bootStrap account.
+
+Example configuration in bmcweb*.bbappend
+```text
+EXTRA_OEMESON:append = " \
+     -Dadditional-bind-to-device="usb0" \
+     -Dadditional-ports="440" \
+     -Dadditional-support-bootstrap-credetial="enabled" \
+     "
+
+SYSTEMD_SERVICE:${PN} += "bmcweb_440.socket"
+```
+
+Tested:
+1. Apply above configuration
+2. Below curl command  will have the response.
+```text
+curl -X GET --user 'bootStrapUser':'bootStrapPassword'  -H "Content-Type: application/json" --insecure https://<usb0IP>:440/redfish/v1/Managers/bmc
+curl -X GET --user 'root':'0penBmc'  -H "Content-Type: application/json" --insecure https://<usb0IP>:443/redfish/v1/Managers/bmc
+curl -X GET --user 'root':'0penBmc'  -H "Content-Type: application/json" --insecure https://<usb0IP>/redfish/v1/Managers/bmc
+```
+
+3. Below curl commands  will be failed.
+```text
+curl -X GET --user 'bootStrapUser':'bootStrapPassword'  -H "Content-Type: application/json" --insecure https://<otherBmcIp>:440/redfish/v1/Managers/bmc
+curl -X GET --user 'bootStrapUser':'bootStrapPassword'  -H "Content-Type: application/json" --insecure https://<otherBmcIp>/redfish/v1/Managers/bmc
+curl -X GET --user 'bootStrapUser':'bootStrapPassword'  -H "Content-Type: application/json" --insecure https://<otherBmcIp>:443/redfish/v1/Managers/bmc
+curl -X GET --user 'root':'0penBmc'  -H "Content-Type: application/json" --insecure https://<otherBmcIp>:440/redfish/v1/Managers/bmc
+```
+
+Upstream-Status: Pending
+
+Change-Id: I32bb544dae9ea1762188687d1d262d21121e2574
+Signed-off-by: Thu Nguyen <thu@os.amperecomputing.com>
+---
+ config/bmcweb.socket.in    |  2 +-
+ config/meson.build         |  9 +++++
+ http/app.hpp               |  8 +++--
+ http/http2_connection.hpp  | 10 ++++--
+ http/http_connection.hpp   | 25 +++++++++++--
+ http/http_server.hpp       | 14 ++++----
+ include/authentication.hpp | 73 +++++++++++++++++++++++++++++++++++++-
+ meson.options              | 10 ++++++
+ 8 files changed, 134 insertions(+), 17 deletions(-)
+
+diff --git a/config/bmcweb.socket.in b/config/bmcweb.socket.in
+index 83479335..7212740a 100644
+--- a/config/bmcweb.socket.in
++++ b/config/bmcweb.socket.in
+@@ -5,7 +5,7 @@ Description=BMC Webserver socket
+ ListenStream=@BMCWEB_PORT@
+ ReusePort=true
+ Service=bmcweb.service
+-FileDescriptorName=bmcweb_@BMCWEB_PORT@_@HTTP_LEVEL_ALLOWED@_@HTTP_AUTH_LEVEL@
++FileDescriptorName=bmcweb_@BMCWEB_PORT@_@HTTP_LEVEL_ALLOWED@_@HTTP_AUTH_LEVEL@_@BOOTSTRAP_CRED@
+ BindToDevice=@HTTP_BIND@
+ 
+ [Install]
+diff --git a/config/meson.build b/config/meson.build
+index d6f76df2..0d5e20ce 100644
+--- a/config/meson.build
++++ b/config/meson.build
+@@ -133,6 +133,7 @@ if https_port > 0
+                 'HTTP_LEVEL_ALLOWED': 'https',
+                 'HTTP_AUTH_LEVEL': 'auth',
+                 'HTTP_BIND': '',
++                'BOOTSTRAP_CRED': 'disabled',
+             },
+         ),
+     )
+@@ -141,7 +142,10 @@ endif
+ ports = get_option('additional-ports')
+ binds = get_option('additional-bind-to-device')
+ auths = get_option('additional-auth')
++bootStraps = get_option('additional-support-bootstrap-credential')
++
+ foreach index : range(ports.length())
++    supportBootStrap = 'disabled'
+     port_number = ports[index]
+     bind_to_device = '0.0.0.0'
+     auth = 'auth'
+@@ -153,6 +157,10 @@ foreach index : range(ports.length())
+         auth = auths[index]
+     endif
+ 
++    if index < bootStraps.length()
++        supportBootStrap = bootStraps[index]
++    endif
++
+     filename = 'bmcweb_' + port_number + '.socket'
+     configure_file(
+         input: 'bmcweb.socket.in',
+@@ -165,6 +173,7 @@ foreach index : range(ports.length())
+                 'HTTP_LEVEL_ALLOWED': 'https',
+                 'HTTP_BIND': bind_to_device,
+                 'HTTP_AUTH_LEVEL': auth,
++                'BOOTSTRAP_CRED': supportBootStrap,
+             },
+         ),
+     )
+diff --git a/http/app.hpp b/http/app.hpp
+index 9946990b..9f3a4ee1 100644
+--- a/http/app.hpp
++++ b/http/app.hpp
+@@ -123,7 +123,7 @@ class App
+             {
+                 continue;
+             }
+-            // name looks like bmcweb_443_https_auth
++            // name looks like bmcweb_443_https_auth_disabled
+             // Assume HTTPS as default
+             std::string socketName(name);
+ 
+@@ -139,7 +139,7 @@ class App
+                 acceptors.emplace_back(Acceptor{
+                     boost::asio::ip::tcp::acceptor(
+                         getIoContext(), boost::asio::ip::tcp::v6(), listenFd),
+-                    httpType});
++                    httpType, socketName});
+             }
+             socketIndex++;
+         }
+@@ -151,7 +151,9 @@ class App
+             using boost::asio::ip::tcp;
+             tcp::endpoint end(tcp::v6(), defaultPort);
+             tcp::acceptor acc(getIoContext(), end);
+-            acceptors.emplace_back(std::move(acc), HttpType::HTTPS);
++            std::string socketName = "bmcweb_" + std::to_string(defaultPort) +
++                                     "_https_auth_disabled";
++            acceptors.emplace_back(std::move(acc), HttpType::HTTPS, socketName);
+         }
+ 
+         return acceptors;
+diff --git a/http/http2_connection.hpp b/http/http2_connection.hpp
+index bb9f3d54..3ab896cb 100644
+--- a/http/http2_connection.hpp
++++ b/http/http2_connection.hpp
+@@ -68,10 +68,11 @@ class HTTP2Connection :
+     HTTP2Connection(boost::asio::ssl::stream<Adaptor>&& adaptorIn,
+                     Handler* handlerIn,
+                     std::function<std::string()>& getCachedDateStrF,
+-                    HttpType httpTypeIn) :
++                    HttpType httpTypeIn, const bool supportBootStrap = false) :
+         httpType(httpTypeIn), adaptor(std::move(adaptorIn)),
+         ngSession(initializeNghttp2Session()), handler(handlerIn),
+-        getCachedDateStr(getCachedDateStrF)
++        getCachedDateStr(getCachedDateStrF),
++        supportBootStrapCred(supportBootStrap)
+     {}
+ 
+     void start()
+@@ -307,7 +308,8 @@ class HTTP2Connection :
+         if constexpr (!BMCWEB_INSECURE_DISABLE_AUTH)
+         {
+             thisReq.session = crow::authentication::authenticate(
+-                {}, asyncResp->res, thisReq.method(), thisReq.req, nullptr);
++                {}, asyncResp->res, thisReq.method(), thisReq.req, nullptr,
++                supportBootStrapCred);
+             if (!crow::authentication::isOnAllowlist(thisReq.url().path(),
+                                                      thisReq.method()) &&
+                 thisReq.session == nullptr)
+@@ -664,5 +666,7 @@ class HTTP2Connection :
+ 
+     using std::enable_shared_from_this<
+         HTTP2Connection<Adaptor, Handler>>::weak_from_this;
++
++    bool supportBootStrapCred;
+ };
+ } // namespace crow
+diff --git a/http/http_connection.hpp b/http/http_connection.hpp
+index 5001c9ee..ad932187 100644
+--- a/http/http_connection.hpp
++++ b/http/http_connection.hpp
+@@ -79,7 +79,8 @@ class Connection :
+     Connection(Handler* handlerIn, HttpType httpTypeIn,
+                boost::asio::steady_timer&& timerIn,
+                std::function<std::string()>& getCachedDateStrF,
+-               boost::asio::ssl::stream<Adaptor>&& adaptorIn) :
++               boost::asio::ssl::stream<Adaptor>&& adaptorIn,
++               std::string socketName) :
+         httpType(httpTypeIn), adaptor(std::move(adaptorIn)), handler(handlerIn),
+         timer(std::move(timerIn)), getCachedDateStr(getCachedDateStrF)
+     {
+@@ -89,6 +90,8 @@ class Connection :
+ 
+         BMCWEB_LOG_DEBUG("{} Connection created, total {}", logPtr(this),
+                          connectionCount);
++
++        initSupportBootStrapAccountState(socketName);
+     }
+ 
+     ~Connection()
+@@ -282,10 +285,24 @@ class Connection :
+         instance.body_limit(boost::none);
+     }
+ 
++    void initSupportBootStrapAccountState(const std::string socketName)
++    {
++        constexpr std::string_view BOOTSTRAP_CREDENTIAL_ENABLED="enabled";
++        std::vector<std::string> socknameComponents;
++        bmcweb::split(socknameComponents, socketName, '_');
++        supportBootStrap = false;
++        if (socknameComponents.size() >= 5 &&
++            socknameComponents[4] == BOOTSTRAP_CREDENTIAL_ENABLED)
++        {
++            supportBootStrap = true;
++        }
++    }
++
+     void upgradeToHttp2()
+     {
+         auto http2 = std::make_shared<HTTP2Connection<Adaptor, Handler>>(
+-            std::move(adaptor), handler, getCachedDateStr, httpType);
++            std::move(adaptor), handler, getCachedDateStr, httpType,
++            supportBootStrap);
+         if (http2settings.empty())
+         {
+             http2->start();
+@@ -632,7 +649,7 @@ class Connection :
+         {
+             boost::beast::http::verb method = value.method();
+             userSession = authentication::authenticate(
+-                ip, res, method, value.base(), mtlsSession);
++                ip, res, method, value.base(), mtlsSession, supportBootStrap);
+         }
+ 
+         std::string_view expect = value[boost::beast::http::field::expect];
+@@ -960,5 +977,7 @@ class Connection :
+ 
+     using std::enable_shared_from_this<
+         Connection<Adaptor, Handler>>::weak_from_this;
++
++    bool supportBootStrap;
+ };
+ } // namespace crow
+diff --git a/http/http_server.hpp b/http/http_server.hpp
+index b2e8cc06..dc2e98f2 100644
+--- a/http/http_server.hpp
++++ b/http/http_server.hpp
+@@ -34,6 +34,7 @@ struct Acceptor
+ {
+     boost::asio::ip::tcp::acceptor acceptor;
+     HttpType httpType;
++    std::string socketName;
+ };
+ 
+ template <typename Handler, typename Adaptor = boost::asio::ip::tcp::socket>
+@@ -126,6 +127,7 @@ class Server
+     using SocketPtr = std::unique_ptr<Adaptor>;
+ 
+     void afterAccept(SocketPtr socket, HttpType httpType,
++                     const std::string& socketName,
+                      const boost::system::error_code& ec)
+     {
+         if (ec)
+@@ -146,7 +148,7 @@ class Server
+         using ConnectionType = Connection<Adaptor, Handler>;
+         auto connection = std::make_shared<ConnectionType>(
+             handler, httpType, std::move(timer), getCachedDateStr,
+-            std::move(stream));
++            std::move(stream), socketName);
+ 
+         boost::asio::post(getIoContext(),
+                           [connection] { connection->start(); });
+@@ -156,16 +158,16 @@ class Server
+ 
+     void doAccept()
+     {
+-        SocketPtr socket = std::make_unique<Adaptor>(getIoContext());
+-        // Keep a raw pointer so when the socket is moved, the pointer is still
+-        // valid
+-        Adaptor* socketPtr = socket.get();
+         for (Acceptor& accept : acceptors)
+         {
++            SocketPtr socket = std::make_unique<Adaptor>(getIoContext());
++            // Keep a raw pointer so when the socket is moved, the pointer is
++            // still valid
++            Adaptor* socketPtr = socket.get();
+             accept.acceptor.async_accept(
+                 *socketPtr,
+                 std::bind_front(&self_t::afterAccept, this, std::move(socket),
+-                                accept.httpType));
++                                accept.httpType, accept.socketName));
+         }
+     }
+ 
+diff --git a/include/authentication.hpp b/include/authentication.hpp
+index c71b5ec3..a1bfeb77 100644
+--- a/include/authentication.hpp
++++ b/include/authentication.hpp
+@@ -23,6 +23,7 @@
+ 
+ #include <cstddef>
+ #include <cstring>
++#include <fstream>
+ #include <memory>
+ #include <optional>
+ #include <string>
+@@ -34,6 +35,65 @@ namespace crow
+ 
+ namespace authentication
+ {
++static constexpr const char* bootStrapStateFile = "/etc/bootStrap.conf";
++
++inline std::optional<std::string> getUserConfigState(
++    const std::string& confFile, const std::string& param)
++{
++    std::ifstream fileToRead(confFile, std::ios::in);
++    if (!fileToRead.is_open())
++    {
++        BMCWEB_LOG_ERROR("Configuration file {} is not existed.", confFile);
++        return std::nullopt;
++    }
++
++    std::string line;
++    auto argSearch = param + "=";
++    size_t startPos = 0;
++    size_t endPos = 0;
++    std::string defaultUserState = "0"; /* None BootStrapAccount */
++    while (getline(fileToRead, line))
++    {
++        // skip comments section starting with #
++        if ((startPos = line.find('#')) != std::string::npos)
++        {
++            if (startPos == 0)
++            {
++                continue;
++            }
++            // skip comments after meaningful section and process those
++            line = line.substr(0, startPos);
++        }
++        if ((startPos = line.find(argSearch)) != std::string::npos)
++        {
++            if ((endPos = line.find(' ', startPos)) == std::string::npos)
++            {
++                endPos = line.size();
++            }
++            startPos += argSearch.size();
++            return line.substr(startPos, endPos - startPos);
++        }
++    }
++
++    return std::nullopt;
++}
++
++inline std::optional<bool> isBootStrapUser(const std::string& userName)
++{
++    auto userState = getUserConfigState(bootStrapStateFile, userName);
++    /* Failed get bootStrapState of one account */
++    if (!userState.has_value())
++    {
++        return std::nullopt;
++    }
++
++    if (*userState == "1")
++    {
++        return true;
++    }
++
++    return false;
++}
+ 
+ inline std::shared_ptr<persistent_data::UserSession> performBasicAuth(
+     const boost::asio::ip::address& clientIp, std::string_view authHeader)
+@@ -258,7 +318,8 @@ inline std::shared_ptr<persistent_data::UserSession> authenticate(
+     boost::beast::http::verb method [[maybe_unused]],
+     const boost::beast::http::header<true>& reqHeader,
+     [[maybe_unused]] const std::shared_ptr<persistent_data::UserSession>&
+-        session)
++        session,
++    const bool& supportBootStrapCred = false)
+ {
+     const persistent_data::AuthConfigMethods& authMethodsConfig =
+         persistent_data::SessionStore::getInstance().getAuthMethodsConfig();
+@@ -303,6 +364,16 @@ inline std::shared_ptr<persistent_data::UserSession> authenticate(
+     }
+     if (sessionOut != nullptr)
+     {
++        auto state = isBootStrapUser(sessionOut->username);
++        if ((!state.has_value() && supportBootStrapCred) ||
++            (state.has_value() && (*state != supportBootStrapCred)))
++        {
++            res.result(boost::beast::http::status::unauthorized);
++            res.jsonValue["Description"] = "The user " + sessionOut->username + \
++                " is unauthorized.";
++            return nullptr;
++        }
++
+         return sessionOut;
+     }
+ 
+diff --git a/meson.options b/meson.options
+index 0e0739a8..3bd25715 100644
+--- a/meson.options
++++ b/meson.options
+@@ -400,6 +400,16 @@ option(
+                     authentication will not be performed for a given socket/port
+                     index.''',
+ )
++
++option(
++    'additional-support-bootstrap-credential',
++    type: 'array',
++    value: [],
++    description: '''Allows specifying an bootStrap credential support option
++                    directive for each additional socket file.  If not provided
++                    assumes no support.
++                 ''',
++)
+ # end additional ports
+ 
+ # BMCWEB_DNS_RESOLVER
+-- 
+2.34.1
+
