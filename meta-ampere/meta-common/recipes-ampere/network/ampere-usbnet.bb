@@ -13,7 +13,9 @@ inherit allarch systemd
 
 SRC_URI += "file://ampere-usbnet.service \
             file://ampere_usbnet.sh \
-            file://00-bmc-usb0.network"
+            file://00-bmc-usb0.network \
+            file://ampere_restart_bmcweb.sh \
+           "
 
 do_install() {
     install -d ${D}${systemd_unitdir}/system/
@@ -24,8 +26,10 @@ do_install() {
 
     install -d ${D}/${sbindir}
     install -m 755 ${UNPACKDIR}/ampere_usbnet.sh ${D}/${sbindir}
+    install -m 755 ${UNPACKDIR}/ampere_restart_bmcweb.sh ${D}/${sbindir}
 }
 
 NATIVE_SYSTEMD_SUPPORT = "1"
 SYSTEMD_PACKAGES = "${PN}"
 SYSTEMD_SERVICE:${PN} = "ampere-usbnet.service"
+

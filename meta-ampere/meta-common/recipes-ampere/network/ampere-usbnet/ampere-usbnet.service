@@ -9,6 +9,7 @@ ExecStart=/usr/sbin/ampere_usbnet.sh
 Restart=on-failure
 RestartMode=direct
 RestartSec=5
+ExecStopPost=/usr/sbin/ampere_restart_bmcweb.sh
 
 [Install]
 WantedBy=multi-user.target
