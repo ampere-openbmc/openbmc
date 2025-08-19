@@ -249,7 +249,7 @@ python systemd_populate_packages() {
                     (servicename, instance, service_type) = re.split('[@.]', service)
                     template_services.setdefault(servicename + '@.' + service_type, []).append(instance)
                 else:
-                    fd.write("%s %s\n" % (action,service))
+                    template_services.setdefault(service, [])
             for template, instances in template_services.items():
                 fd.write("%s %s %s\n" % (action, template, ' '.join(instances)))
         d.appendVar("FILES:%s" % pkg, ' ' + oe.path.join(d.getVar("systemd_unitdir"), "%s-preset/98-%s.preset" % (prefix, pkg)))
