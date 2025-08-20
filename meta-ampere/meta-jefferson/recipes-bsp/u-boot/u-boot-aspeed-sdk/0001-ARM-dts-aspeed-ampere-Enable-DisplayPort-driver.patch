@@ -1,0 +1,34 @@
+From 9ef43a08000146eb5417876a8c4b33795b707b9a Mon Sep 17 00:00:00 2001
+From: Chanh Nguyen <chanh@os.amperecomputing.com>
+Date: Tue, 19 Aug 2025 10:44:51 +0700
+Subject: [PATCH] ARM: dts: aspeed: ampere: Enable DisplayPort driver
+
+This commit enables the DisplayPort driver for the U-Boot phase.
+Additionally, the 'CONFIG_ASPEED_DP' option must be set to 'y' in
+the U-Boot configuration.
+
+Upstream-Status: Pending
+
+Signed-off-by: Chanh Nguyen <chanh@os.amperecomputing.com>
+---
+ arch/arm/dts/ast2600-ampere.dts | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/arch/arm/dts/ast2600-ampere.dts b/arch/arm/dts/ast2600-ampere.dts
+index 63088703a7..f2192c8715 100644
+--- a/arch/arm/dts/ast2600-ampere.dts
++++ b/arch/arm/dts/ast2600-ampere.dts
+@@ -88,6 +88,10 @@
+ 	};
+ };
+ 
++&display_port {
++	status = "okay";
++};
++
+ &scu {
+ 	mac0-clk-delay = <0x10 0x0a
+ 			  0x10 0x10
+-- 
+2.43.0
+
