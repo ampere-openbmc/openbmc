@@ -41,7 +41,7 @@ SRC_URI += " \
 do_compile[network] = "1"
 DEPENDS += "python3-requests-native jq-native"
 
-SYSTEMD_SERVICE:${PN} += "bmcweb_440.socket"
+FILES:${PN}:append = " ${systemd_system_unitdir}/bmcweb_440.socket"
 
 do_compile:prepend() {
     jq -s '.[0] * .[1]' ${UNPACKDIR}/ampere-registries.json ${S}/redfish-core/include/registries/openbmc.json > ${S}/redfish-core/include/registries/openbmc_test.json
