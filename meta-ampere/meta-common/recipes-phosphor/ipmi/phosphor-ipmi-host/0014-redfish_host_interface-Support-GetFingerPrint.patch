@@ -1,4 +1,4 @@
-From 9012f56d8d73d0898c607509f361585175408601 Mon Sep 17 00:00:00 2001
+From a4e84a782791a8e694a9179f8962f2a3488a6d41 Mon Sep 17 00:00:00 2001
 From: Thu Nguyen <thu@os.amperecomputing.com>
 Date: Sun, 20 Jul 2025 09:12:40 +0000
 Subject: [PATCH] redfish_host_interface: Support GetFingerPrint
@@ -24,9 +24,9 @@ Signed-off-by: Thu Nguyen <thu@os.amperecomputing.com>
  include/ipmid/api-types.hpp |   3 +
  meson.build                 |   9 ++
  meson.options               |   8 ++
- redfishhostinterface.cpp    | 214 ++++++++++++++++++++++++++++++++++++
- redfishhostinterface.hpp    |  55 +++++++++
- 5 files changed, 289 insertions(+)
+ redfishhostinterface.cpp    | 211 ++++++++++++++++++++++++++++++++++++
+ redfishhostinterface.hpp    |  55 ++++++++++
+ 5 files changed, 286 insertions(+)
  create mode 100644 redfishhostinterface.cpp
  create mode 100644 redfishhostinterface.hpp
 
@@ -111,10 +111,10 @@ index cdbab9c..dfb23df 100644
  #######################################################################
 diff --git a/redfishhostinterface.cpp b/redfishhostinterface.cpp
 new file mode 100644
-index 0000000..00d19d0
+index 0000000..e34ff36
 --- /dev/null
 +++ b/redfishhostinterface.cpp
-@@ -0,0 +1,214 @@
+@@ -0,0 +1,211 @@
 +/*
 + * Copyright (c) 2025 Ampere Computing LLC
 + *
@@ -158,10 +158,7 @@ index 0000000..00d19d0
 +bool checkRHIAllowedMediumType(const uint8_t& mediumType)
 +{
 +    if (mediumType ==
-+            static_cast<uint8_t>(ipmi::EChannelMediumType::smbusV20) ||
-+        mediumType ==
-+            static_cast<uint8_t>(ipmi::EChannelMediumType::systemInterface) ||
-+        mediumType == static_cast<uint8_t>(ipmi::EChannelMediumType::oem))
++            static_cast<uint8_t>(ipmi::EChannelMediumType::smbusV20))
 +    {
 +        return true;
 +    }
