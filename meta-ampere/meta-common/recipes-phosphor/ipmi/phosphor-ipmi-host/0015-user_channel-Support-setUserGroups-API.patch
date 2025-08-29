@@ -1,4 +1,4 @@
-From 176d4730dc1de5bf30a0feac75ca09b81f3b6f43 Mon Sep 17 00:00:00 2001
+From a5279a40bc4c77ab28b2fbca9e2d31aadbe84f7e Mon Sep 17 00:00:00 2001
 From: Thu Nguyen <thu@os.amperecomputing.com>
 Date: Wed, 16 Jul 2025 15:52:30 +0000
 Subject: [PATCH] user_channel: Support setUserGroups API
@@ -14,11 +14,11 @@ Upstream-Status: Pending
 Change-Id: I0999d9c351ddff1d5f28e29d6ddd32cb038bc07a
 Signed-off-by: Thu Nguyen <thu@os.amperecomputing.com>
 ---
- user_channel/user_layer.cpp |  16 ++++++
- user_channel/user_layer.hpp |  12 +++++
- user_channel/user_mgmt.cpp  | 104 ++++++++++++++++++++++++++++++++++++
- user_channel/user_mgmt.hpp  |  25 +++++++++
- 4 files changed, 157 insertions(+)
+ user_channel/user_layer.cpp | 16 ++++++
+ user_channel/user_layer.hpp | 12 +++++
+ user_channel/user_mgmt.cpp  | 98 +++++++++++++++++++++++++++++++++++++
+ user_channel/user_mgmt.hpp  | 24 +++++++++
+ 4 files changed, 150 insertions(+)
 
 diff --git a/user_channel/user_layer.cpp b/user_channel/user_layer.cpp
 index ee147d8..08b9f8c 100644
@@ -74,43 +74,10 @@ index ad215e3..41e1ffb 100644
 +
  } // namespace ipmi
 diff --git a/user_channel/user_mgmt.cpp b/user_channel/user_mgmt.cpp
-index 7c30049..fdc6310 100644
+index 7c30049..5e31f3a 100644
 --- a/user_channel/user_mgmt.cpp
 +++ b/user_channel/user_mgmt.cpp
-@@ -1019,6 +1019,7 @@ static constexpr const char* jsonIpmiEnabled = "ipmi_enabled";
- static constexpr const char* jsonLinkAuthEnabled = "link_auth_enabled";
- static constexpr const char* jsonAccCallbk = "access_callback";
- static constexpr const char* jsonUserEnabled = "user_enabled";
-+static constexpr const char* jsonUserGroup = "user_groups";
- static constexpr const char* jsonUserInSys = "user_in_system";
- static constexpr const char* jsonFixedUser = "fixed_user_name";
- static constexpr const char* payloadEnabledStr = "payload_enabled";
-@@ -1158,6 +1159,8 @@ void UserAccess::readUserData()
-             userInfo[jsonLinkAuthEnabled].get<std::vector<bool>>();
-         std::vector<bool> accessCallback =
-             userInfo[jsonAccCallbk].get<std::vector<bool>>();
-+        std::vector<std::string> userGroups =
-+            userInfo[jsonUserGroup].get<std::vector<std::string>>();
- 
-         // Payload Enables Processing.
-         std::array<std::array<bool, ipmiMaxChannels>, payloadsPerByte>
-@@ -1230,6 +1233,7 @@ void UserAccess::readUserData()
-             userInfo[jsonUserInSys].get<bool>();
-         usersTbl.user[usrIndex].fixedUserName =
-             userInfo[jsonFixedUser].get<bool>();
-+        usersTbl.user[usrIndex].userGroups = userGroups;
-     }
- 
-     lg2::debug("User data read from IPMI data file");
-@@ -1281,6 +1285,7 @@ void UserAccess::writeUserData()
-         jsonUserInfo[jsonUserEnabled] = usersTbl.user[usrIndex].userEnabled;
-         jsonUserInfo[jsonUserInSys] = usersTbl.user[usrIndex].userInSystem;
-         jsonUserInfo[jsonFixedUser] = usersTbl.user[usrIndex].fixedUserName;
-+        jsonUserInfo[jsonUserGroup] = usersTbl.user[usrIndex].userGroups;
- 
-         readPayloadAccessFromUserInfo(usersTbl.user[usrIndex], stdPayload,
-                                       oemPayload);
-@@ -1414,6 +1419,11 @@ UsersTbl* UserAccess::getUsersTblPtr()
+@@ -1414,6 +1414,11 @@ UsersTbl* UserAccess::getUsersTblPtr()
      return &usersTbl;
  }
  
@@ -122,7 +89,7 @@ index 7c30049..fdc6310 100644
  void UserAccess::getSystemPrivAndGroups()
  {
      std::map<std::string, PrivAndGroupType> properties;
-@@ -1691,4 +1701,98 @@ void UserAccess::cacheUserDataFile()
+@@ -1691,4 +1696,97 @@ void UserAccess::cacheUserDataFile()
  
      return;
  }
@@ -201,7 +168,6 @@ index 7c30049..fdc6310 100644
 +                   userName);
 +        return ccUnspecifiedError;
 +    }
-+    userInfo->userGroups = groupAccess;
 +
 +    if (std::find(groupAccess.begin(), groupAccess.end(), ipmiGrpName) ==
 +        groupAccess.end())
@@ -222,18 +188,10 @@ index 7c30049..fdc6310 100644
 +}
  } // namespace ipmi
 diff --git a/user_channel/user_mgmt.hpp b/user_channel/user_mgmt.hpp
-index 3f4b265..06eff75 100644
+index 3f4b265..df96570 100644
 --- a/user_channel/user_mgmt.hpp
 +++ b/user_channel/user_mgmt.hpp
-@@ -131,6 +131,7 @@ struct UserInfo
-     uint8_t userName[ipmiMaxUserName];
-     UserPrivAccess userPrivAccess[ipmiMaxChannels];
-     bool userEnabled;
-+    std::vector<std::string> userGroups;
-     bool userInSystem;
-     bool fixedUserName;
-     PayloadAccess payloadAccess[ipmiMaxChannels];
-@@ -430,6 +431,30 @@ class UserAccess
+@@ -430,6 +430,30 @@ class UserAccess
       */
      UsersTbl* getUsersTblPtr();
  
