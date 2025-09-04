@@ -9,6 +9,7 @@ EXTRA_OEMESON:append = " \
 
 PACKAGECONFIG:append = " \
      redfish-bmc-journal \
+     redfish-dump-log \
 "
 
 PACKAGECONFIG:remove = " \
