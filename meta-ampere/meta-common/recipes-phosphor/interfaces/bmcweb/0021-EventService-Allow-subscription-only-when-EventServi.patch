@@ -1,0 +1,53 @@
+From cb232f517d1e029596a7f780b223038f0202289d Mon Sep 17 00:00:00 2001
+From: Hieu Huynh <hieuh@os.amperecomputing.com>
+Date: Fri, 5 Sep 2025 06:48:35 +0000
+Subject: [PATCH] EventService: Allow subscription only when EventService is
+ enabled
+
+Currently, the subscription is allowed even when the event service
+is disabled.
+
+This commit adds a validation to check "ServiceEnabled" property
+at EventService. If it is set to false, create subscription is
+rejected.
+
+Tested:
+1. Set "ServiceEnabled" to false, subscribe to events command fails
+   with status 500-GeneralError.
+2. Set "ServiceEnabled" to true. Subscriptions are allowed.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
+---
+ redfish-core/lib/event_service.hpp | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/redfish-core/lib/event_service.hpp b/redfish-core/lib/event_service.hpp
+index a9093b3b..918bf63c 100644
+--- a/redfish-core/lib/event_service.hpp
++++ b/redfish-core/lib/event_service.hpp
+@@ -323,6 +323,20 @@ inline void requestRoutesEventDestinationCollection(App& app)
+                 messages::eventSubscriptionLimitExceeded(asyncResp->res);
+                 return;
+             }
++
++            persistent_data::EventServiceConfig eventServiceConfig =
++                persistent_data::EventServiceStore::getInstance()
++                    .getEventServiceConfig();
++            if (!eventServiceConfig.enabled)
++            {
++                BMCWEB_LOG_INFO("EventService is not enabled. Cannot "
++                                       "subscribe to events");
++                asyncResp->res.result(
++                    boost::beast::http::status::service_unavailable);
++                messages::generalError(asyncResp->res);
++                return;
++            }
++
+             std::string destUrl;
+             std::string protocol;
+             std::optional<bool> verifyCertificate;
+-- 
+2.43.0
+
