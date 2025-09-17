@@ -26,6 +26,7 @@ SRC_URI += "\
             file://0016-user_channel-Add-APIs-to-manage-None-IPMI-group-user.patch \
             file://0017-user_channel-Support-setUserIsBootStrapState-API.patch \
             file://0018-redfish_host_interface-Support-GetBootStrapAccount.patch \
+            file://0019-Prevent-PowerCycle-action-when-Chassis-is-Off.patch \
             file://ampere-phosphor-softpoweroff \
             file://ampere.xyz.openbmc_project.Ipmi.Internal.SoftPowerOff.service \
            "

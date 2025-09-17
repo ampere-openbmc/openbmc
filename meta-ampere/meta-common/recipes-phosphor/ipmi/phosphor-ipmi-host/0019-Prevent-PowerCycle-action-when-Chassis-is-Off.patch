@@ -1,0 +1,67 @@
+From 24e86f89c28e1d224520a57af822be8c05b7f660 Mon Sep 17 00:00:00 2001
+From: Thang Tran <thuutran@amperecomputing.com>
+Date: Wed, 17 Sep 2025 03:43:14 +0000
+Subject: [PATCH] Prevent PowerCycle action when Chassis is Off
+
+As define in the Chapter 28.3 - Chassis Control Command of IPMI
+specification, BMC should reject the PowerCycle request when Power state
+is OFF and return 0xD5 error completion code.
+
+Upstream-Status: Pending
+
+Tested:
+   1. Turn on the Host
+      $ipmitool power on
+   2. Do power cycle
+      $ipmitool power cycle
+   3. Host is turned off then turned on as expectation
+   4. Turn off the Host
+      $ipmitool power off
+   5. Do power cycle
+      $ipmitool power cycle
+   6. BMC rejects this request and returns 0xD5 error code.
+
+Change-Id: Ie9a232037a7cb083daae6fe3cf051ac511f2ab7d
+Signed-off-by: Thang Tran <thuutran@amperecomputing.com>
+---
+ chassishandler.cpp | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/chassishandler.cpp b/chassishandler.cpp
+index b8f2f9a..fc7e2d9 100644
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -1401,9 +1401,30 @@ ipmi::RspType<> ipmiChassisControl(ipmi::Context::ptr& ctx,
+                 ctx, State::Host::Transition::ForceWarmReboot);
+             break;
+         case cmdPowerCycle:
++        {
++            auto powerState = power_policy::getPowerStatus();
++
++            if (powerState == std::nullopt)
++            {
++                return ipmi::responseUnspecifiedError();
++            }
++
++            /*
++             * As define in the Chapter 28.3 - Chassis Control Command of IPMI
++             * specification: It is recommended that no action occur if system
++             * power is off (S4/S5) when this action is selected, and that a D5
++             * "Requiest parameter(s) not supported in this presenst state."
++             * error completion code be returned.
++             */
++            if (powerState.value() == false)
++            {
++                return ipmi::responseCommandNotAvailable();
++            }
++
+             rc = initiateHostStateTransition(ctx,
+                                              State::Host::Transition::Reboot);
+             break;
++        }
+         case cmdSoftOffViaOverTemp:
+             rc = initiateHostStateTransition(ctx, State::Host::Transition::Off);
+             break;
+-- 
+2.43.0
+
