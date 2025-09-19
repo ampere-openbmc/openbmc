@@ -9,6 +9,7 @@ SRC_URI += " \
             file://0006-configurations-mtmitchell-update-Min-Max-values.patch \
             file://0007-configurations-update-Backplane-s-configurations.patch \
             file://0008-Set-fault-LED-in-LC-threshold-events-.patch \
+            file://0009-configurations-mtmitchell-update-LNC-threshold-of-12.patch \
            "
 
 PACKAGECONFIG:append = " fru-device-resizefru"

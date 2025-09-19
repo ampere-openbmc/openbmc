@@ -1,0 +1,33 @@
+From 1c53cb8da42ad082d9c381972980797b1fa215c5 Mon Sep 17 00:00:00 2001
+From: Thu Nguyen <thu@os.amperecomputing.com>
+Date: Wed, 17 Sep 2025 16:11:19 +0000
+Subject: [PATCH] configurations: mtmitchell: update LNC threshold of 12V_SB
+
+The operation range of 12V_SB is +/-15% so the LNC threshold of this
+sensor should be 10.2. But the step is 0.08, so the value 10.16 will be
+used.
+
+Upstream-Status: Pending
+
+Change-Id: I6206d2aa81e1cad751267f270a44a776e3429fa4
+Signed-off-by: Thu Nguyen <thu@os.amperecomputing.com>
+---
+ configurations/mtmitchell_mb.json | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/configurations/mtmitchell_mb.json b/configurations/mtmitchell_mb.json
+index 115767a..1f921db 100644
+--- a/configurations/mtmitchell_mb.json
++++ b/configurations/mtmitchell_mb.json
+@@ -956,7 +956,7 @@
+                         "Direction": "less than",
+                         "Name": "lower non critical",
+                         "Severity": 0,
+-                        "Value": 10.8
++                        "Value": 10.16
+                     }
+                 ],
+                 "Type": "ADC"
+-- 
+2.34.1
+
