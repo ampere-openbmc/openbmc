@@ -1,0 +1,651 @@
+From acac1acb8c8e1b45b2ef538c60f08777e27220e1 Mon Sep 17 00:00:00 2001
+From: Chau Ly <chaul@amperecomputing.com>
+Date: Tue, 23 Sep 2025 06:20:37 +0000
+Subject: [PATCH] meta-ampere: EM: Set fault LED in LC threshold events for
+ fans
+
+In order to meet the requirements in fan failure detection, BMC shall
+set fan fault LED for a fan that has its speed fall below the lower
+critical threshold. The fan fault LED will be turned off when the
+threshold event de-asserts. FanSensor daemon in dbus-sensors allows
+"LED" property configured in the "Connector" property of a fan to
+provide the led group name managed by phosphor-led-manager that needs to
+be asserted in lower critical threshold events.
+
+This commit first splits "Connector" configurations for fan sensors into
+separate configurations. This is done in platforms that has 2 tach
+sensors for one physical fan, as the 2 tach can enlist the same
+"Connector" configuration. This can be done thanks to the "Bind*"
+configuration supported by EM that can join a record to its missing
+piece [1] (Mt.Jade and Mt.Mitchell). Mt.Jefferson only has one
+tachometer for a fan, so it's not necessary to split the the "Connector"
+configuration out.
+
+This commit then adds fan fault led group name for each fan sensor in
+each platform though "LED" property.
+
+[1]: https://github.com/openbmc/entity-manager/blob/4cd8c250c65ed29705e2b6b3a50d2edb6efccae9/CONFIG_FORMAT.md?plain=1#L72
+
+Tested:
+
+1. Unplug a fan on a pltform that has BMC and Host both running
+=> When a LC threshold event asserts, fault LED is turned on
+
+2. Plug the fan back to the slot
+=> LC threshold event deasserts and fault LED is turned off
+
+3. Disable fan control via IPMI OEM command
+
+4. Manually set a fan PWM to 1% via IPMI OEM command
+=> When a LC threshold event asserts, fault LED is turned on
+
+5. Enable fan control again via IPMI OEM command
+=> When the LC threshold event deasserts, fault LED is turned off
+
+Upstream-Status: Pending
+
+Signed-off-by: Chau Ly <chaul@amperecomputing.com>
+---
+ configurations/mtjade.json         | 180 ++++++++++++++---------------
+ configurations/mtjefferson_mb.json |  12 +-
+ configurations/mtmitchell_mb.json  | 180 ++++++++++++++---------------
+ 3 files changed, 176 insertions(+), 196 deletions(-)
+
+diff --git a/configurations/mtjade.json b/configurations/mtjade.json
+index 8a41bba..82d4a52 100644
+--- a/configurations/mtjade.json
++++ b/configurations/mtjade.json
+@@ -755,14 +755,19 @@
+                 "Type": "ADC"
+             },
+             {
+-                "Connector": {
+-                    "Name": "Fan Connector 1",
+-                    "Pwm": 2,
+-                    "PwmName": "PWM3",
+-                    "Tachs": [
+-                        4
+-                    ]
+-                },
++                "LED": "fan3_fault",
++                "Name": "Fan connector 3",
++                "Pwm": 2,
++                "PwmName": "PWM3",
++                "Status": "disabled",
++                "Tachs": [
++                    4,
++                    5
++                ],
++                "Type": "FanConnector"
++            },
++            {
++                "BindConnector": "Fan connector 3",
+                 "Index": 4,
+                 "MaxReading": 25500,
+                 "Name": "FAN3_1",
+@@ -784,14 +789,7 @@
+                 "Type": "AspeedFan"
+             },
+             {
+-                "Connector": {
+-                    "Name": "Fan Connector 2",
+-                    "Pwm": 2,
+-                    "PwmName": "PWM3",
+-                    "Tachs": [
+-                        5
+-                    ]
+-                },
++                "BindConnector": "Fan connector 3",
+                 "Index": 5,
+                 "MaxReading": 25500,
+                 "Name": "FAN3_2",
+@@ -813,14 +811,19 @@
+                 "Type": "AspeedFan"
+             },
+             {
+-                "Connector": {
+-                    "Name": "Fan Connector 3",
+-                    "Pwm": 3,
+-                    "PwmName": "PWM4",
+-                    "Tachs": [
+-                        6
+-                    ]
+-                },
++                "LED": "fan4_fault",
++                "Name": "Fan connector 4",
++                "Pwm": 3,
++                "PwmName": "PWM4",
++                "Status": "disabled",
++                "Tachs": [
++                    6,
++                    7
++                ],
++                "Type": "FanConnector"
++            },
++            {
++                "BindConnector": "Fan connector 4",
+                 "Index": 6,
+                 "MaxReading": 25500,
+                 "Name": "FAN4_1",
+@@ -842,14 +845,7 @@
+                 "Type": "AspeedFan"
+             },
+             {
+-                "Connector": {
+-                    "Name": "Fan Connector 4",
+-                    "Pwm": 3,
+-                    "PwmName": "PWM4",
+-                    "Tachs": [
+-                        7
+-                    ]
+-                },
++                "BindConnector": "Fan connector 4",
+                 "Index": 7,
+                 "MaxReading": 25500,
+                 "Name": "FAN4_2",
+@@ -871,14 +867,19 @@
+                 "Type": "AspeedFan"
+             },
+             {
+-                "Connector": {
+-                    "Name": "Fan Connector 5",
+-                    "Pwm": 4,
+-                    "PwmName": "PWM5",
+-                    "Tachs": [
+-                        8
+-                    ]
+-                },
++                "LED": "fan5_fault",
++                "Name": "Fan connector 5",
++                "Pwm": 4,
++                "PwmName": "PWM5",
++                "Status": "disabled",
++                "Tachs": [
++                    8,
++                    9
++                ],
++                "Type": "FanConnector"
++            },
++            {
++                "BindConnector": "Fan connector 5",
+                 "Index": 8,
+                 "MaxReading": 25500,
+                 "Name": "FAN5_1",
+@@ -900,14 +901,7 @@
+                 "Type": "AspeedFan"
+             },
+             {
+-                "Connector": {
+-                    "Name": "Fan Connector 6",
+-                    "Pwm": 4,
+-                    "PwmName": "PWM5",
+-                    "Tachs": [
+-                        9
+-                    ]
+-                },
++                "BindConnector": "Fan connector 5",
+                 "Index": 9,
+                 "MaxReading": 25500,
+                 "Name": "FAN5_2",
+@@ -929,14 +923,19 @@
+                 "Type": "AspeedFan"
+             },
+             {
+-                "Connector": {
+-                    "Name": "Fan Connector 7",
+-                    "Pwm": 5,
+-                    "PwmName": "PWM6",
+-                    "Tachs": [
+-                        10
+-                    ]
+-                },
++                "LED": "fan6_fault",
++                "Name": "Fan connector 6",
++                "Pwm": 5,
++                "PwmName": "PWM6",
++                "Status": "disabled",
++                "Tachs": [
++                    10,
++                    11
++                ],
++                "Type": "FanConnector"
++            },
++            {
++                "BindConnector": "Fan connector 6",
+                 "Index": 10,
+                 "MaxReading": 25500,
+                 "Name": "FAN6_1",
+@@ -958,14 +957,7 @@
+                 "Type": "AspeedFan"
+             },
+             {
+-                "Connector": {
+-                    "Name": "Fan Connector 8",
+-                    "Pwm": 5,
+-                    "PwmName": "PWM6",
+-                    "Tachs": [
+-                        11
+-                    ]
+-                },
++                "BindConnector": "Fan connector 6",
+                 "Index": 11,
+                 "MaxReading": 25500,
+                 "Name": "FAN6_2",
+@@ -987,14 +979,19 @@
+                 "Type": "AspeedFan"
+             },
+             {
+-                "Connector": {
+-                    "Name": "Fan Connector 9",
+-                    "Pwm": 6,
+-                    "PwmName": "PWM7",
+-                    "Tachs": [
+-                        12
+-                    ]
+-                },
++                "LED": "fan7_fault",
++                "Name": "Fan connector 7",
++                "Pwm": 6,
++                "PwmName": "PWM7",
++                "Status": "disabled",
++                "Tachs": [
++                    12,
++                    13
++                ],
++                "Type": "FanConnector"
++            },
++            {
++                "BindConnector": "Fan connector 7",
+                 "Index": 12,
+                 "MaxReading": 25500,
+                 "Name": "FAN7_1",
+@@ -1016,14 +1013,7 @@
+                 "Type": "AspeedFan"
+             },
+             {
+-                "Connector": {
+-                    "Name": "Fan Connector 10",
+-                    "Pwm": 6,
+-                    "PwmName": "PWM7",
+-                    "Tachs": [
+-                        13
+-                    ]
+-                },
++                "BindConnector": "Fan connector 7",
+                 "Index": 13,
+                 "MaxReading": 25500,
+                 "Name": "FAN7_2",
+@@ -1045,14 +1035,19 @@
+                 "Type": "AspeedFan"
+             },
+             {
+-                "Connector": {
+-                    "Name": "Fan Connector 11",
+-                    "Pwm": 7,
+-                    "PwmName": "PWM8",
+-                    "Tachs": [
+-                        14
+-                    ]
+-                },
++                "LED": "fan8_fault",
++                "Name": "Fan connector 8",
++                "Pwm": 7,
++                "PwmName": "PWM8",
++                "Status": "disabled",
++                "Tachs": [
++                    14,
++                    15
++                ],
++                "Type": "FanConnector"
++            },
++            {
++                "BindConnector": "Fan connector 8",
+                 "Index": 14,
+                 "MaxReading": 25500,
+                 "Name": "FAN8_1",
+@@ -1074,14 +1069,7 @@
+                 "Type": "AspeedFan"
+             },
+             {
+-                "Connector": {
+-                    "Name": "Fan Connector 12",
+-                    "Pwm": 7,
+-                    "PwmName": "PWM8",
+-                    "Tachs": [
+-                        15
+-                    ]
+-                },
++                "BindConnector": "Fan connector 8",
+                 "Index": 15,
+                 "MaxReading": 25500,
+                 "Name": "FAN8_2",
+diff --git a/configurations/mtjefferson_mb.json b/configurations/mtjefferson_mb.json
+index 876f50f..1e3ebd5 100644
+--- a/configurations/mtjefferson_mb.json
++++ b/configurations/mtjefferson_mb.json
+@@ -1111,7 +1111,8 @@
+                 "Address": "0x5c",
+                 "Bus": "8",
+                 "Connector": {
+-                    "Name": "Fan Connector 1",
++                    "LED": "fan0_fault",
++                    "Name": "Fan Connector 0",
+                     "Pwm": 0,
+                     "PwmName": "PWM0",
+                     "Tachs": [
+@@ -1143,7 +1144,8 @@
+                 "Address": "0x5c",
+                 "Bus": "8",
+                 "Connector": {
+-                    "Name": "Fan Connector 2",
++                    "LED": "fan1_fault",
++                    "Name": "Fan Connector 1",
+                     "Pwm": 1,
+                     "PwmName": "PWM1",
+                     "Tachs": [
+@@ -1175,7 +1177,8 @@
+                 "Address": "0x5c",
+                 "Bus": "8",
+                 "Connector": {
+-                    "Name": "Fan Connector 3",
++                    "LED": "fan2_fault",
++                    "Name": "Fan Connector 2",
+                     "Pwm": 2,
+                     "PwmName": "PWM2",
+                     "Tachs": [
+@@ -1207,7 +1210,8 @@
+                 "Address": "0x5c",
+                 "Bus": "8",
+                 "Connector": {
+-                    "Name": "Fan Connector 4",
++                    "LED": "fan3_fault",
++                    "Name": "Fan Connector 3",
+                     "Pwm": 3,
+                     "PwmName": "PWM3",
+                     "Tachs": [
+diff --git a/configurations/mtmitchell_mb.json b/configurations/mtmitchell_mb.json
+index 115767a..0a1142d 100644
+--- a/configurations/mtmitchell_mb.json
++++ b/configurations/mtmitchell_mb.json
+@@ -1777,17 +1777,22 @@
+                 ],
+                 "Type": "EMC1413"
+             },
++            {
++                "LED": "fan0_fault",
++                "Name": "Fan connector 0",
++                "Pwm": 3,
++                "PwmName": "PWM7",
++                "Status": "disabled",
++                "Tachs": [
++                    10,
++                    11
++                ],
++                "Type": "FanConnector"
++            },
+             {
+                 "Address": "0x2f",
+                 "Bus": "8",
+-                "Connector": {
+-                    "Name": "Fan Connector 1",
+-                    "Pwm": 3,
+-                    "PwmName": "PWM7",
+-                    "Tachs": [
+-                        10
+-                    ]
+-                },
++                "BindConnector": "Fan connector 0",
+                 "Index": 10,
+                 "MaxReading": 25500,
+                 "Name": "FAN0_F",
+@@ -1811,14 +1816,7 @@
+             {
+                 "Address": "0x2f",
+                 "Bus": "8",
+-                "Connector": {
+-                    "Name": "Fan Connector 2",
+-                    "Pwm": 3,
+-                    "PwmName": "PWM7",
+-                    "Tachs": [
+-                        11
+-                    ]
+-                },
++                "BindConnector": "Fan connector 0",
+                 "Index": 11,
+                 "MaxReading": 25500,
+                 "Name": "FAN0_R",
+@@ -1839,17 +1837,22 @@
+                 ],
+                 "Type": "I2CFan"
+             },
++            {
++                "LED": "fan1_fault",
++                "Name": "Fan connector 1",
++                "Pwm": 1,
++                "PwmName": "PWM5",
++                "Status": "disabled",
++                "Tachs": [
++                    2,
++                    3
++                ],
++                "Type": "FanConnector"
++            },
+             {
+                 "Address": "0x2f",
+                 "Bus": "8",
+-                "Connector": {
+-                    "Name": "Fan Connector 3",
+-                    "Pwm": 1,
+-                    "PwmName": "PWM5",
+-                    "Tachs": [
+-                        2
+-                    ]
+-                },
++                "BindConnector": "Fan connector 1",
+                 "Index": 2,
+                 "MaxReading": 25500,
+                 "Name": "FAN1_F",
+@@ -1873,14 +1876,7 @@
+             {
+                 "Address": "0x2f",
+                 "Bus": "8",
+-                "Connector": {
+-                    "Name": "Fan Connector 4",
+-                    "Pwm": 1,
+-                    "PwmName": "PWM5",
+-                    "Tachs": [
+-                        3
+-                    ]
+-                },
++                "BindConnector": "Fan connector 1",
+                 "Index": 3,
+                 "MaxReading": 25500,
+                 "Name": "FAN1_R",
+@@ -1901,17 +1897,22 @@
+                 ],
+                 "Type": "I2CFan"
+             },
++            {
++                "LED": "fan2_fault",
++                "Name": "Fan connector 2",
++                "Pwm": 0,
++                "PwmName": "PWM4",
++                "Status": "disabled",
++                "Tachs": [
++                    0,
++                    1
++                ],
++                "Type": "FanConnector"
++            },
+             {
+                 "Address": "0x2f",
+                 "Bus": "8",
+-                "Connector": {
+-                    "Name": "Fan Connector 5",
+-                    "Pwm": 0,
+-                    "PwmName": "PWM4",
+-                    "Tachs": [
+-                        0
+-                    ]
+-                },
++                "BindConnector": "Fan connector 2",
+                 "Index": 0,
+                 "MaxReading": 25500,
+                 "Name": "FAN2_F",
+@@ -1935,14 +1936,7 @@
+             {
+                 "Address": "0x2f",
+                 "Bus": "8",
+-                "Connector": {
+-                    "Name": "Fan Connector 6",
+-                    "Pwm": 0,
+-                    "PwmName": "PWM4",
+-                    "Tachs": [
+-                        1
+-                    ]
+-                },
++                "BindConnector": "Fan connector 2",
+                 "Index": 1,
+                 "MaxReading": 25500,
+                 "Name": "FAN2_R",
+@@ -1963,17 +1957,22 @@
+                 ],
+                 "Type": "I2CFan"
+             },
++            {
++                "LED": "fan3_fault",
++                "Name": "Fan connector 3",
++                "Pwm": 3,
++                "PwmName": "PWM3",
++                "Status": "disabled",
++                "Tachs": [
++                    10,
++                    11
++                ],
++                "Type": "FanConnector"
++            },
+             {
+                 "Address": "0x20",
+                 "Bus": "8",
+-                "Connector": {
+-                    "Name": "Fan Connector 7",
+-                    "Pwm": 3,
+-                    "PwmName": "PWM3",
+-                    "Tachs": [
+-                        10
+-                    ]
+-                },
++                "BindConnector": "Fan connector 3",
+                 "Index": 10,
+                 "MaxReading": 25500,
+                 "Name": "FAN3_F",
+@@ -1997,14 +1996,7 @@
+             {
+                 "Address": "0x20",
+                 "Bus": "8",
+-                "Connector": {
+-                    "Name": "Fan Connector 8",
+-                    "Pwm": 3,
+-                    "PwmName": "PWM3",
+-                    "Tachs": [
+-                        11
+-                    ]
+-                },
++                "BindConnector": "Fan connector 3",
+                 "Index": 11,
+                 "MaxReading": 25500,
+                 "Name": "FAN3_R",
+@@ -2025,17 +2017,22 @@
+                 ],
+                 "Type": "I2CFan"
+             },
++            {
++                "LED": "fan4_fault",
++                "Name": "Fan connector 4",
++                "Pwm": 1,
++                "PwmName": "PWM1",
++                "Status": "disabled",
++                "Tachs": [
++                    2,
++                    3
++                ],
++                "Type": "FanConnector"
++            },
+             {
+                 "Address": "0x20",
+                 "Bus": "8",
+-                "Connector": {
+-                    "Name": "Fan Connector 9",
+-                    "Pwm": 1,
+-                    "PwmName": "PWM1",
+-                    "Tachs": [
+-                        2
+-                    ]
+-                },
++                "BindConnector": "Fan connector 4",
+                 "Index": 2,
+                 "MaxReading": 25500,
+                 "Name": "FAN4_F",
+@@ -2059,14 +2056,7 @@
+             {
+                 "Address": "0x20",
+                 "Bus": "8",
+-                "Connector": {
+-                    "Name": "Fan Connector 10",
+-                    "Pwm": 1,
+-                    "PwmName": "PWM1",
+-                    "Tachs": [
+-                        3
+-                    ]
+-                },
++                "BindConnector": "Fan connector 4",
+                 "Index": 3,
+                 "MaxReading": 25500,
+                 "Name": "FAN4_R",
+@@ -2087,17 +2077,22 @@
+                 ],
+                 "Type": "I2CFan"
+             },
++            {
++                "LED": "fan5_fault",
++                "Name": "Fan connector 5",
++                "Pwm": 0,
++                "PwmName": "PWM0",
++                "Status": "disabled",
++                "Tachs": [
++                    0,
++                    1
++                ],
++                "Type": "FanConnector"
++            },
+             {
+                 "Address": "0x20",
+                 "Bus": "8",
+-                "Connector": {
+-                    "Name": "Fan Connector 11",
+-                    "Pwm": 0,
+-                    "PwmName": "PWM0",
+-                    "Tachs": [
+-                        0
+-                    ]
+-                },
++                "BindConnector": "Fan connector 5",
+                 "Index": 0,
+                 "MaxReading": 25500,
+                 "Name": "FAN5_F",
+@@ -2121,14 +2116,7 @@
+             {
+                 "Address": "0x20",
+                 "Bus": "8",
+-                "Connector": {
+-                    "Name": "Fan Connector 12",
+-                    "Pwm": 0,
+-                    "PwmName": "PWM0",
+-                    "Tachs": [
+-                        1
+-                    ]
+-                },
++                "BindConnector": "Fan connector 5",
+                 "Index": 1,
+                 "MaxReading": 25500,
+                 "Name": "FAN5_R",
