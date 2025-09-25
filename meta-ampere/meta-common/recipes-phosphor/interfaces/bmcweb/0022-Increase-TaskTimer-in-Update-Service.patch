@@ -1,0 +1,37 @@
+From 1f7a6c4b6abee3e394f4a73e57fc446307c4f7bf Mon Sep 17 00:00:00 2001
+From: Huy Anh Le <hule@amperecomputing.com>
+Date: Tue, 23 Sep 2025 14:39:31 +0700
+Subject: [PATCH] Increase TaskTimer in Update Service
+
+Extended the task timeout from 5 minutes to 10 minutes to accommodate
+firmware updates such as CPLD, which may require more time. This change
+helps prevent the update process from being interrupted due to timeout.
+
+Tested:
+1. Flash CPLD via WebUI
+2. StateState is returned "Completed" when flash done
+   GET /redfish/v1/TaskService/Tasks/<task_id>
+
+Upstream-Status: Pending
+
+Signed-off-by: Huy Anh Le <hule@amperecomputing.com>
+---
+ redfish-core/lib/update_service.hpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/redfish-core/lib/update_service.hpp b/redfish-core/lib/update_service.hpp
+index 16f4b99c..d6b4c8c5 100644
+--- a/redfish-core/lib/update_service.hpp
++++ b/redfish-core/lib/update_service.hpp
+@@ -235,7 +235,7 @@ inline bool handleCreateTask(const boost::system::error_code& ec2,
+ 
+         // if we're getting status updates it's
+         // still alive, update timer
+-        taskData->extendTimer(std::chrono::minutes(5));
++        taskData->extendTimer(std::chrono::minutes(10));
+     }
+ 
+     // as firmware update often results in a
+-- 
+2.43.0
+
