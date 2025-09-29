@@ -1,4 +1,4 @@
-From e99dfd5b66cce2c8796ce9d1194761f97537fd4b Mon Sep 17 00:00:00 2001
+From bb1431dcfa10098fe5065afcb0d6beeecfff67cc Mon Sep 17 00:00:00 2001
 From: Hieu Huynh <hieuh@os.amperecomputing.com>
 Date: Fri, 19 Sep 2025 03:43:49 +0000
 Subject: [PATCH] configurations: update Backplane's configurations
@@ -14,14 +14,14 @@ Upstream-Status: Pending
 
 Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
 ---
- configurations/mtjefferson_bp.json | 217 +++++++++++++++++++----------
- 1 file changed, 140 insertions(+), 77 deletions(-)
+ configurations/mtjefferson_bp.json | 222 +++++++++++++++++++----------
+ 1 file changed, 144 insertions(+), 78 deletions(-)
 
 diff --git a/configurations/mtjefferson_bp.json b/configurations/mtjefferson_bp.json
-index 15343b0..2e5d9fe 100644
+index 5ae4c4c..b02569f 100644
 --- a/configurations/mtjefferson_bp.json
 +++ b/configurations/mtjefferson_bp.json
-@@ -1,81 +1,144 @@
+@@ -1,84 +1,150 @@
 -{
 -    "Exposes": [
 -        {
@@ -113,7 +113,10 @@ index 15343b0..2e5d9fe 100644
 -            "Bus": "$bus",
 -            "Name": "FrontBPTemp$ADDRESS / 82 + 1",
 -            "Type": "JC42"
--        },
++        "xyz.openbmc_project.Inventory.Decorator.Replaceable": {
++            "FieldReplaceable": false,
++            "HotPluggable": false
+         },
 -        {
 -            "Address": "0x6a",
 -            "Bus": "$ADDRESS / 82 * 8 + 48 + 0",
@@ -149,39 +152,10 @@ index 15343b0..2e5d9fe 100644
 -            "Bus": "$ADDRESS / 82 * 8 + 48 + 5",
 -            "Name": "nvme$ADDRESS / 82 * 8 + 5",
 -            "Type": "NVME1000"
--        },
--        {
--            "Address": "0x6a",
--            "Bus": "$ADDRESS / 82 * 8 + 48 + 6",
--            "Name": "nvme$ADDRESS / 82 * 8 + 6",
--            "Type": "NVME1000"
--        },
--        {
--            "Address": "0x6a",
--            "Bus": "$ADDRESS / 82 * 8 + 48 + 7",
--            "Name": "nvme$ADDRESS / 82 * 8 + 7",
--            "Type": "NVME1000"
-+        "xyz.openbmc_project.Inventory.Decorator.Replaceable": {
-+            "FieldReplaceable": false,
-+            "HotPluggable": false
-         }
--    ],
--    "Name": "Jefferson BP_$ADDRESS / 82 + 1",
--    "Probe": [
--        "xyz.openbmc_project.FruDevice({'BOARD_PART_NUMBER': 'CBP2980'})",
--        "AND",
--        "FOUND('Mt.Jefferson_Motherboard')"
--    ],
--    "Type": "Board",
--    "xyz.openbmc_project.Inventory.Decorator.Asset": {
--        "Manufacturer": "$BOARD_MANUFACTURER",
--        "Model": "$BOARD_PRODUCT_NAME",
--        "PartNumber": "$BOARD_PART_NUMBER",
--        "SerialNumber": "$BOARD_SERIAL_NUMBER"
-     },
--    "xyz.openbmc_project.Inventory.Decorator.Replaceable": {
--        "FieldReplaceable": false,
--        "HotPluggable": false
++        "xyz.openbmc_project.Inventory.Decorator.Revision": {
++            "Version": "$BOARD_INFO_AM1"
++        }
++    },
 +    {
 +        "Exposes": [
 +            {
@@ -235,14 +209,44 @@ index 15343b0..2e5d9fe 100644
 +            "Model": "$BOARD_PRODUCT_NAME",
 +            "PartNumber": "$BOARD_PART_NUMBER",
 +            "SerialNumber": "$BOARD_SERIAL_NUMBER"
-+        },
+         },
+-        {
+-            "Address": "0x6a",
+-            "Bus": "$ADDRESS / 82 * 8 + 48 + 6",
+-            "Name": "nvme$ADDRESS / 82 * 8 + 6",
+-            "Type": "NVME1000"
 +        "xyz.openbmc_project.Inventory.Decorator.Replaceable": {
 +            "FieldReplaceable": false,
 +            "HotPluggable": false
-+        }
+         },
+-        {
+-            "Address": "0x6a",
+-            "Bus": "$ADDRESS / 82 * 8 + 48 + 7",
+-            "Name": "nvme$ADDRESS / 82 * 8 + 7",
+-            "Type": "NVME1000"
++        "xyz.openbmc_project.Inventory.Decorator.Revision": {
++            "Version": "$BOARD_INFO_AM1"
+         }
+-    ],
+-    "Name": "Jefferson BP_$ADDRESS / 82 + 1",
+-    "Probe": [
+-        "xyz.openbmc_project.FruDevice({'BOARD_PART_NUMBER': 'CBP2980'})",
+-        "AND",
+-        "FOUND('Mt.Jefferson_Motherboard')"
+-    ],
+-    "Type": "Board",
+-    "xyz.openbmc_project.Inventory.Decorator.Asset": {
+-        "Manufacturer": "$BOARD_MANUFACTURER",
+-        "Model": "$BOARD_PRODUCT_NAME",
+-        "PartNumber": "$BOARD_PART_NUMBER",
+-        "SerialNumber": "$BOARD_SERIAL_NUMBER"
+-    },
+-    "xyz.openbmc_project.Inventory.Decorator.Replaceable": {
+-        "FieldReplaceable": false,
+-        "HotPluggable": false
+-    },
+-    "xyz.openbmc_project.Inventory.Decorator.Revision": {
+-        "Version": "$BOARD_INFO_AM1"
      }
 -}
 +]
--- 
-2.43.0
-

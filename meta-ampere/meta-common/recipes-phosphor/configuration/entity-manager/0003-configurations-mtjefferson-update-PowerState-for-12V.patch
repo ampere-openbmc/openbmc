@@ -1,8 +1,7 @@
-From 49c26ec02803a7fd5232a713ce37d75fa60e864d Mon Sep 17 00:00:00 2001
+From 1c3fea75933cd1740319adaa5743c3b87bc90146 Mon Sep 17 00:00:00 2001
 From: Dung Cao <dung@os.amperecomputing.com>
 Date: Mon, 28 Apr 2025 03:01:38 +0000
-Subject: [PATCH 5/6] configurations: mtjefferson: update PowerState for
- 12V_FAN
+Subject: [PATCH] configurations: mtjefferson: update PowerState for 12V_FAN
 
 The 12V_FAN should be read when host is off also.
 Remove the depend on ChassisOn of PowerState for 12V_FAN configuration.
@@ -15,7 +14,7 @@ Signed-off-by: Dung Cao <dung@os.amperecomputing.com>
  1 file changed, 1 deletion(-)
 
 diff --git a/configurations/mtjefferson_mb.json b/configurations/mtjefferson_mb.json
-index bc4ae86..968486a 100644
+index 7395898..876f50f 100644
 --- a/configurations/mtjefferson_mb.json
 +++ b/configurations/mtjefferson_mb.json
 @@ -248,7 +248,6 @@

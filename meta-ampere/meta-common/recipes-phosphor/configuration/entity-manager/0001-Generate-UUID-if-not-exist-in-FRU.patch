@@ -1,4 +1,4 @@
-From 45777b0b4343bd92322d068b2eb3dc197b2f005d Mon Sep 17 00:00:00 2001
+From d0a12d2ca4325c0bca045005227f6ed2816b063b Mon Sep 17 00:00:00 2001
 From: Hieu Huynh <hieuh@os.amperecomputing.com>
 Date: Thu, 24 Oct 2024 02:14:27 +0000
 Subject: [PATCH] Generate UUID if not exist in FRU
@@ -16,10 +16,10 @@ Signed-off-by: Hieu Huynh <hieuh@os.amperecomputing.com>
  1 file changed, 18 insertions(+)
 
 diff --git a/src/fru_device/fru_utils.cpp b/src/fru_device/fru_utils.cpp
-index 0a1f583..0216c3e 100644
+index 13e619f..8414b43 100644
 --- a/src/fru_device/fru_utils.cpp
 +++ b/src/fru_device/fru_utils.cpp
-@@ -35,6 +35,7 @@ extern "C"
+@@ -21,6 +21,7 @@ extern "C"
  {
  // Include for I2C_SMBUS_BLOCK_MAX
  #include <linux/i2c.h>
@@ -27,7 +27,7 @@ index 0a1f583..0216c3e 100644
  }
  
  constexpr size_t fruVersion = 1; // Current FRU spec version number is 1
-@@ -313,6 +314,23 @@ static void parseMultirecordUUID(
+@@ -299,6 +300,23 @@ static void parseMultirecordUUID(
  
      if (areaOffset == 0)
      {

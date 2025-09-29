@@ -1,4 +1,4 @@
-From acac1acb8c8e1b45b2ef538c60f08777e27220e1 Mon Sep 17 00:00:00 2001
+From 6722e5157ff89b3efea571c5cdb68aa0b069f267 Mon Sep 17 00:00:00 2001
 From: Chau Ly <chaul@amperecomputing.com>
 Date: Tue, 23 Sep 2025 06:20:37 +0000
 Subject: [PATCH] meta-ampere: EM: Set fault LED in LC threshold events for
