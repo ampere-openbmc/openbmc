@@ -1,0 +1,158 @@
+From 20dc5f866fffd28cc1a283e65c6be0a9f9c136b7 Mon Sep 17 00:00:00 2001
+From: Huy Anh Le <hule@amperecomputing.com>
+Date: Mon, 29 Sep 2025 08:53:34 +0700
+Subject: [PATCH] Update user account edit permission control based on
+ userPrivilege
+
+Currently, users with Operator or ReadOnly privileges cannot change
+their own password because the update request includes the RoleId
+property in the request body. When this property is included, the
+system returns the error: "The property RoleId is not in the list
+of valid properties for the resource".
+This change ensures that: Users with Operator or ReadOnly privileges
+are only allowed to update their password; other fields,
+such as RoleId, are excluded from their update requests. The
+UI disables privilege selection if the current user is not an Administrator.
+
+Tested:
+- Logged in with an Administrator account and created accounts
+  with Operator and ReadOnly privileges.
+- Login with Operator and ReadOnly accounts and verify that changing
+  the password is successful.
+
+Upstream-Status: Pending
+
+Signed-off-by: Huy Anh Le <hule@amperecomputing.com>
+---
+ .../SecurityAndAccess/UserManagementStore.js  | 27 ++++++++++++++-----
+ .../UserManagement/ModalUser.vue              | 22 ++++++++++++---
+ .../UserManagement/UserManagement.vue         |  4 ++-
+ 3 files changed, 43 insertions(+), 10 deletions(-)
+
+diff --git a/src/store/modules/SecurityAndAccess/UserManagementStore.js b/src/store/modules/SecurityAndAccess/UserManagementStore.js
+index c439c30..b6a361a 100644
+--- a/src/store/modules/SecurityAndAccess/UserManagementStore.js
++++ b/src/store/modules/SecurityAndAccess/UserManagementStore.js
+@@ -140,14 +140,29 @@ const UserManagementStore = {
+     },
+     async updateUser(
+       { dispatch },
+-      { originalUsername, username, password, privilege, status, locked },
++      {
++        originalUsername,
++        username,
++        password,
++        privilege,
++        status,
++        locked,
++        userPrivilege,
++      },
+     ) {
+       const data = {};
+-      if (username) data.UserName = username;
+-      if (password) data.Password = password;
+-      if (privilege) data.RoleId = privilege;
+-      if (status !== undefined) data.Enabled = status;
+-      if (locked !== undefined) data.Locked = locked;
++      if (userPrivilege !== 'Administrator') {
++        // Only update password for yourself
++        if (password) data.Password = password;
++      } else {
++        // Admin updates for another user
++        if (username) data.UserName = username;
++        if (password) data.Password = password;
++        if (privilege) data.RoleId = privilege;
++        if (status !== undefined) data.Enabled = status;
++        if (locked !== undefined) data.Locked = locked;
++      }
++
+       return await api
+         .patch(`/redfish/v1/AccountService/Accounts/${originalUsername}`, data)
+         .then(() => dispatch('getUsers'))
+diff --git a/src/views/SecurityAndAccess/UserManagement/ModalUser.vue b/src/views/SecurityAndAccess/UserManagement/ModalUser.vue
+index 08ee8c8..5d2e277 100644
+--- a/src/views/SecurityAndAccess/UserManagement/ModalUser.vue
++++ b/src/views/SecurityAndAccess/UserManagement/ModalUser.vue
+@@ -55,7 +55,11 @@
+                 name="user-status"
+                 data-test-id="userManagement-radioButton-statusDisabled"
+                 :value="false"
+-                :disabled="!newUser && originalUsername === disabled"
++                :disabled="
++                  !newUser &&
++                  (userPrivilege !== 'Administrator' ||
++                    originalUsername === 'root')
++                "
+                 @input="v$.form.status.$touch()"
+               >
+                 {{ $t('global.status.disabled') }}
+@@ -81,7 +85,11 @@
+                 aria-describedby="username-help-block"
+                 data-test-id="userManagement-input-username"
+                 :state="getValidationState(v$.form.username)"
+-                :disabled="!newUser && originalUsername === disabled"
++                :disabled="
++                  !newUser &&
++                  (userPrivilege !== 'Administrator' ||
++                    originalUsername === 'root')
++                "
+                 @input="v$.form.username.$touch()"
+               />
+               <b-form-invalid-feedback role="alert">
+@@ -108,7 +116,11 @@
+                 :options="privilegeTypes"
+                 data-test-id="userManagement-select-privilege"
+                 :state="getValidationState(v$.form.privilege)"
+-                :disabled="!newUser && originalUsername === 'root'"
++                :disabled="
++                  !newUser &&
++                  (userPrivilege !== 'Administrator' ||
++                    originalUsername === 'root')
++                "
+                 @input="v$.form.privilege.$touch()"
+               >
+                 <template #first>
+@@ -303,6 +315,9 @@ export default {
+     privilegeTypes() {
+       return this.$store.getters['userManagement/accountRoles'];
+     },
++    userPrivilege() {
++      return this.$store.getters['global/userPrivilege'];
++    },
+     computedForm() {
+       return {
+         status: this.form.status,
+@@ -430,6 +445,7 @@ export default {
+     },
+     resetForm() {
+       this.form.originalUsername = '';
++      this.originalUsername = '';
+       this.form.status = true;
+       this.form.username = '';
+       this.form.privilege = null;
+diff --git a/src/views/SecurityAndAccess/UserManagement/UserManagement.vue b/src/views/SecurityAndAccess/UserManagement/UserManagement.vue
+index cb057a7..020aea5 100644
+--- a/src/views/SecurityAndAccess/UserManagement/UserManagement.vue
++++ b/src/views/SecurityAndAccess/UserManagement/UserManagement.vue
+@@ -201,6 +201,7 @@ export default {
+       selectedRows: selectedRows,
+       tableHeaderCheckboxModel: tableHeaderCheckboxModel,
+       tableHeaderCheckboxIndeterminate: tableHeaderCheckboxIndeterminate,
++      userPrivilege: this.$store.getters['global/userPrivilege'],
+     };
+   },
+   computed: {
+@@ -299,8 +300,9 @@ export default {
+           .catch(({ message }) => this.errorToast(message))
+           .finally(() => this.endLoader());
+       } else {
++        let userDataUpdate = { ...userData, userPrivilege: this.userPrivilege };
+         this.$store
+-          .dispatch('userManagement/updateUser', userData)
++          .dispatch('userManagement/updateUser', userDataUpdate)
+           .then((success) => this.successToast(success))
+           .catch(({ message }) => this.errorToast(message))
+           .finally(() => this.endLoader());
+-- 
+2.43.0
+

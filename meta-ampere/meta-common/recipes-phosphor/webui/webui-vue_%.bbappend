@@ -10,4 +10,5 @@ SRC_URI += "\
             file://0007-Use-TaskService-to-manage-firmware-flash-completion.patch \
             file://0008-Preserve-selected-network-interface-across-reloads.patch \
             file://0009-Detect-BMC-firmware-image-update-and-trigger-reboot.patch \
+            file://0010-Update-user-account-edit-permission.patch \
            "
